@@ -1,0 +1,20 @@
+AutoECO Report
+FILE-A: C:\DOCUMENTS AND SETTINGS\ADMINISTRATOR\DESKTOP\LED NHA CHO\CPU\CPU_1.MAX
+FILE-B: C:\DOCUMENTS AND SETTINGS\ADMINISTRATOR\DESKTOP\LED NHA CHO\CPU\CPU.MNL
+If "*EOF*" immediately follows, no changes were made
+Deleting POW.2 from net VCC
+Adding PWMH.7 to net 11
+Adding DIG.23 to net 42
+Adding DIG.13 to net 32
+Adding DIG.12 to net 31
+Adding DIG.9 to net 28
+Adding DIG.10 to net 29
+Adding DIG.22 to net 41
+Adding DIG.11 to net 30
+Adding DIG.7 to net 26
+Adding DIG.8 to net 27
+Adding DIG.6 to net 25
+Adding DIG.24 to net 43
+Adding PWML.6 to net 2
+*EOF*
+No errors found

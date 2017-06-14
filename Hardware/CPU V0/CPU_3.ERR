@@ -1,0 +1,34 @@
+AutoECO Error Report
+FILE-A: C:\DOCUMENTS AND SETTINGS\ADMINISTRATOR\DESKTOP\LED NHA CHO\CPU\CPU_3.MAX
+FILE-B: C:\DOCUMENTS AND SETTINGS\ADMINISTRATOR\DESKTOP\HAMRUOU\HAMRUOU.MNL
+ERROR: Pin "2" in package CON4 wasn't defined by footprint 1 DIEM_J3
+ERROR: Pin "3" in package CON4 wasn't defined by footprint 1 DIEM_J3
+ERROR: Pin "4" in package CON4 wasn't defined by footprint 1 DIEM_J3
+ERROR: Pin "3" in package RESISTOR_SIP_9 wasn't defined by footprint RESISTOR 1/4W_R4
+ERROR: Pin "4" in package RESISTOR_SIP_9 wasn't defined by footprint RESISTOR 1/4W_R4
+ERROR: Pin "5" in package RESISTOR_SIP_9 wasn't defined by footprint RESISTOR 1/4W_R4
+ERROR: Pin "6" in package RESISTOR_SIP_9 wasn't defined by footprint RESISTOR 1/4W_R4
+ERROR: Pin "7" in package RESISTOR_SIP_9 wasn't defined by footprint RESISTOR 1/4W_R4
+ERROR: Pin "8" in package RESISTOR_SIP_9 wasn't defined by footprint RESISTOR 1/4W_R4
+ERROR: Pin "9" in package RESISTOR_SIP_9 wasn't defined by footprint RESISTOR 1/4W_R4
+ERROR: Pin "3" in package CON6A_0 wasn't defined by footprint CONNECTOR 2 PIN(LARGE)_J1
+ERROR: Pin "4" in package CON6A_0 wasn't defined by footprint CONNECTOR 2 PIN(LARGE)_J1
+ERROR: Pin "2" in package CON2 wasn't defined by footprint 1 DIEM_J5
+ERROR: Component R4 (with fp RESISTOR 1/4W_R4) has no pin 7
+ERROR: Component R4 (with fp RESISTOR 1/4W_R4) has no pin 6
+ERROR: Component R4 (with fp RESISTOR 1/4W_R4) has no pin 5
+ERROR: Component R4 (with fp RESISTOR 1/4W_R4) has no pin 4
+ERROR: Component R4 (with fp RESISTOR 1/4W_R4) has no pin 3
+ERROR: Component J2 (with fp 1 DIEM_J2) has no pin 2
+ERROR: Component J2 (with fp 1 DIEM_J2) has no pin 3
+ERROR: Component J3 (with fp 1 DIEM_J3) has no pin 4
+ERROR: Component J3 (with fp 1 DIEM_J3) has no pin 3
+ERROR: Component J3 (with fp 1 DIEM_J3) has no pin 2
+ERROR: Component J1 (with fp CONNECTOR 2 PIN(LARGE)_J1) has no pin 4
+ERROR: Component J1 (with fp CONNECTOR 2 PIN(LARGE)_J1) has no pin 3
+ERROR: Component J5 (with fp 1 DIEM_J5) has no pin 2
+ERROR: Component R4 (with fp RESISTOR 1/4W_R4) has no pin 9
+ERROR: Component R4 (with fp RESISTOR 1/4W_R4) has no pin 8
+ERROR: Component J4 (with fp 1 DIEM_J4) has no pin 3
+ERROR: Component J4 (with fp 1 DIEM_J4) has no pin 2
+30 errors found

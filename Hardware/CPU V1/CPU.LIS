@@ -1,0 +1,11 @@
+AutoECO Report
+FILE-A: C:\DOCUMENTS AND SETTINGS\ADMINISTRATOR\DESKTOP\LED NHA CHO\CPU\CPU.MAX
+FILE-B: C:\DOCUMENTS AND SETTINGS\ADMINISTRATOR\DESKTOP\LED NHA CHO\CPU\CPU.MNL
+If "*EOF*" immediately follows, no changes were made
+Adding package DIODE
+Adding component D3
+Found footprint DIOT_500 from PRT file for part DIODE, comp D3
+Adding D3.1 to net GND
+Adding D3.2 to net VCC
+*EOF*
+No errors found

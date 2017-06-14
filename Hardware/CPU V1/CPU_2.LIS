@@ -1,0 +1,35 @@
+AutoECO Report
+FILE-A: C:\DOCUMENTS AND SETTINGS\ADMINISTRATOR\DESKTOP\LED NHA CHO\CPU\CPU_2.MAX
+FILE-B: C:\DOCUMENTS AND SETTINGS\ADMINISTRATOR\DESKTOP\LED NHA CHO\CPU\CPU.MNL
+If "*EOF*" immediately follows, no changes were made
+Adding JP16.7 to net GND
+Adding U26.1 to net GND
+Adding C11.2 to net GND
+Adding D44.1 to net GND
+Adding JP11.3 to net GND
+Adding U14.9 to net GND
+Adding R16.2 to net GND
+Adding JP21.6 to net GND
+Adding JP21.2 to net GND
+Adding JP14.2 to net GND
+Adding J13.1 to net GND
+Adding U26.3 to net VCC
+Adding JP21.1 to net VCC
+Adding JP16.9 to net VCC
+Adding PWMH.7 to net 11
+Adding DIG.23 to net 42
+Adding DIG.13 to net 32
+Adding DIG.12 to net 31
+Adding DIG.9 to net 28
+Adding DIG.10 to net 29
+Adding DIG.22 to net 41
+Adding DIG.11 to net 30
+Adding DIG.7 to net 26
+Adding DIG.8 to net 27
+Adding DIG.6 to net 25
+Adding DIG.24 to net 43
+Adding PWML.6 to net 2
+Deleting net GND1
+Deleting net 5V
+*EOF*
+No errors found
