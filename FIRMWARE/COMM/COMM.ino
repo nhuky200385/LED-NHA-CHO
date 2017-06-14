@@ -1,3 +1,5 @@
+// compiled paht C:\Users\LT-N2K\AppData\Local\Temp
+
 #include <memory>
 #include <Arduino.h>
 #include <ESP8266WiFi.h>
@@ -62,7 +64,12 @@ SoftwareSerial swSer(5,4, false, 256); //RX, TX
 #define Set_Interface "Interface="
 #define Set_busStop "BusStop="
 #define Set_Default "Default=1"
-#define Get_Config "Config?"
+#define Set_Host "Host=" //Host=abc,Port=123,Infor_arg=akdj,Config_arg=add,Route_arg=xxx
+#define Set_Port "Post="
+#define Set_Infor_arg "Infor_arg="
+#define Set_Config_arg "Config_arg="
+#define Set_Route_arg "Route_arg="
+#define Check_Config "Config?"
 #define StartUp "StartUp"
 #define BusInfo "BusInfo"
 #define End_BusInfo "End_Info"
@@ -173,6 +180,17 @@ struct {
   char WiFi_Pass[20];
   char WiFi_Name[20];
 } EEData;
+typedef struct {
+	uint8_t display_index;
+	char route_no[12],car_no[12],time_arrival[6],passenger[10];
+	bool changed;
+	bool visible;
+	bool configured;
+}bus_struct;
+
+#define Bus_Max 10
+int Bus_count;
+bus_struct Bus[Bus_Max];
 
 void Read_Config(bool bdefault = false);
 
@@ -184,7 +202,7 @@ void printConfig()
 	DEBUG_SERIAL("infor_arg=%s\n",EEData.infor_arg);
 	DEBUG_SERIAL("config_arg=%s\n",EEData.config_arg);
 	DEBUG_SERIAL("route_arg=%s\n",EEData.route_arg);
-	DEBUG_SERIAL("BusStopNo=%s\n",EEData.BusStopNo);	
+	DEBUG_SERIAL("BusStopNo=%s\n",EEData.BusStopNo);
 	DEBUG_SERIAL("EthernetIP=%d.%d.%d.%d\n",EEData.ethIP[0],EEData.ethIP[1],EEData.ethIP[2],EEData.ethIP[3]);
 	DEBUG_SERIAL("%s%s\n",Set_Interface,EEData.Interface == from_Ethernet ? "Ethernet" : "WIFI");
 	DEBUG_SERIAL("%s%s,%s\n",Set_Wifi,EEData.WiFi_Name,EEData.WiFi_Pass);
@@ -308,6 +326,7 @@ void setup() {
   //
   sprintf(chipID, "BUS_%06X", ESP.getChipId());
   DEBUG_SERIAL("chipID=%s\n",String(chipID).c_str());
+  mac[sizeof(mac)-1] = ESP.getChipId() % 200;
 
   display_Running_Sketch();
   
@@ -378,45 +397,25 @@ void loop() {
   }
   if (bGet_condition)
  {
-	 if (EEData.Interface == from_Ethernet) 
-	 {
-		 int retry=3;
+	 int retry=3;
 		while (Comm_Infor == 0) 
 		{
-			GET_Infor_from_Ethernet();
-			// GET_Config_from_Ethernet();
-			// GET_Route_from_Ethernet("2");
+			Get_Infor();
 			if (--retry<=0) break;
 			delay(1000);
 		}
-		if (Get_Error>=3)
+		if (Get_Error>=3 && EEData.Interface == from_Ethernet)
 		 {
 			 Get_Error=0;
 			 DEBUG_SERIAL("Reset Ethernet Shield\n");
 			 StartEthernet();
 		 }
-	 }
-	 else if (EEData.Interface == from_WIFI) 
-	 {
-		int retry=3;
-		while (Comm_Infor == 0) 
-		{
-			GET_Infor_from_Wifi();
-			// GET_Config_from_Wifi();
-			// GET_Route_from_Wifi("2");
-			if (--retry<=0) break;
-			delay(1000);
-		}
-		if (Get_Error>=3)
-		 {
-			 Get_Error=0;
-			 //DEBUG_SERIAL("Reconnect to WiFi\n");
-			 //SetupWifi();
-		 }
-	 }
 	 lastGet_timeStamp = millis();	 
 	 Send_DateTime();
-	 if (Comm_Infor == isBusInfo) Send_BusInfor();
+	 if (Comm_Infor == isBusInfo) {
+		 Get_BusInfor_from_buffer();
+		 Send_BusInfor();
+	 }
 	 if (Comm_Infor>0) Comm_Infor=0;
 }
  DebugFromDisplay();
@@ -484,6 +483,11 @@ void Wifi_Server()
 void Process_Com_buffer()
 {
 	char* p,*p1;
+	//loai \r\n neu co
+	p = strchr(com_buffer,'\r');
+	if (p) *p = 0;
+	p = strchr(com_buffer,'\n');
+	if (p) *p = 0;
 		if (strstr(com_buffer,Set_busStop))
 		{
 			p = strstr(com_buffer,Set_busStop) + sizeof(Set_busStop) - 1;
@@ -537,11 +541,50 @@ void Process_Com_buffer()
 			Save_Config();
 			StartEthernet();
 		}
+		else if (strstr(com_buffer,Set_Host))
+		{
+			do
+			{
+				p = strstr(com_buffer,Set_Host) + sizeof(Set_Host) - 1;
+				p1 = strchr(p,',');
+				if (p1) *p1 = 0;
+				memcpy(EEData.host,p,sizeof(EEData.host));
+				if (p1) *p1 = ','; else break;
+				p = p1 + 1;
+				p = strstr(com_buffer,Set_Port);
+				if (p==NULL) break;
+				p+= sizeof(Set_Port) - 1;
+				EEData.port = atoi(p);
+				p = strstr(com_buffer,Set_Infor_arg);
+				if (p==NULL) break;
+				p += sizeof(Set_Infor_arg) - 1;
+				p1 = strchr(p,',');
+				if (p1) *p1 = 0;
+				memcpy(EEData.infor_arg,p,sizeof(EEData.infor_arg));
+				if (p1) *p1 = ','; else break;
+				p = strstr(com_buffer,Set_Config_arg);
+				if (p==NULL) break;
+				p += sizeof(Set_Config_arg) - 1;
+				p1 = strchr(p,',');
+				if (p1) *p1 = 0;
+				memcpy(EEData.config_arg,p,sizeof(EEData.config_arg));
+				if (p1) *p1 = ','; else break;
+				p = strstr(com_buffer,Set_Route_arg);
+				if (p==NULL) break;
+				p += sizeof(Set_Route_arg) - 1;
+				p1 = strchr(p,',');
+				if (p1) *p1 = 0;
+				memcpy(EEData.route_arg,p,sizeof(EEData.route_arg));
+				break;			
+			}while (true);
+			Save_Config();
+			printConfig();
+		}
 		else if (strstr(com_buffer, Set_Default))
 		{			
 			Read_Config(true);
 		}
-		else if (strstr(com_buffer, Get_Config))
+		else if (strstr(com_buffer, Check_Config))
 		{			
 			printConfig();
 		}
@@ -550,7 +593,25 @@ void Process_Com_buffer()
 			displaySerial.write(com_buffer,com_buffer_len);
 		}
 }
-void GET_Config_from_Ethernet()
+bool Get_Config()
+{
+	if (EEData.Interface == from_Ethernet) return GET_Config_from_Ethernet();
+	else if (EEData.Interface == from_WIFI) return GET_Config_from_Wifi();
+	else return false;
+}
+bool Get_Infor()
+{
+	if (EEData.Interface == from_Ethernet) return GET_Infor_from_Ethernet();
+	else if (EEData.Interface == from_WIFI) return GET_Infor_from_Wifi();
+	else return false;
+}
+bool Get_Route(char *routerID)
+{
+	if (EEData.Interface == from_Ethernet) return GET_Route_from_Ethernet(routerID);
+	else if (EEData.Interface == from_WIFI) return GET_Route_from_Wifi(routerID);
+	else return false;
+}
+bool GET_Config_from_Ethernet()
 {
 	//DEBUG_SERIAL("connect to %s:%s\n",EEData.host,EEData.port);
   if (Eclient.connect(EEData.host, EEData.port)) {
@@ -587,8 +648,10 @@ void GET_Config_from_Ethernet()
 	Get_Error +=1;
   }
   Eclient.stop();
+  if (e_bytesRecv>0) return true;
+  else return false;
 }
-void GET_Infor_from_Ethernet()
+bool GET_Infor_from_Ethernet()
 {
   if (EEData.BusStopNo[1] == 0 && EEData.BusStopNo[0] == '0' )
   {
@@ -629,8 +692,10 @@ void GET_Infor_from_Ethernet()
 	Get_Error +=1;
   }
   Eclient.stop();
+  if (e_bytesRecv>0) return true;
+  else return false;
 }
-void GET_Route_from_Ethernet(char* routerID)
+bool GET_Route_from_Ethernet(char* routerID)
 {
 	//DEBUG_SERIAL("connect to %s:%s\n",EEData.host,EEData.port);
   if (Eclient.connect(EEData.host, EEData.port)) {
@@ -661,6 +726,8 @@ void GET_Route_from_Ethernet(char* routerID)
 	Get_Error +=1;
   }
   Eclient.stop();
+  if (e_bytesRecv>0) return true;
+  else return false;
 }
 int handleHeaderResponse(EthernetClient cli,const unsigned long getTimeout)
 {
@@ -734,13 +801,13 @@ int handleHeaderResponse(EthernetClient cli,const unsigned long getTimeout)
     }
     return _returnCode;
 }
-void GET_Config_from_Wifi()
+bool GET_Config_from_Wifi()
 {
 	if  (WiFi.status() != WL_CONNECTED)
 	{
 		DEBUG_SERIAL("Wifi Not connected\n");
 		Get_Error +=1;
-		return;
+		return false;
 	}
 	WiFiClient client1;
 	//DEBUG_SERIAL("connect to %s:%s\n",EEData.host,EEData.port);
@@ -777,14 +844,16 @@ void GET_Config_from_Wifi()
 	Get_Error +=1;
   }
   client1.stop();
+  if (e_bytesRecv>0) return true;
+  else return false;
 }
-void GET_Infor_from_Wifi()
+bool GET_Infor_from_Wifi()
 {
 	if  (WiFi.status() != WL_CONNECTED)
 	{
 		DEBUG_SERIAL("Wifi Not connected\n");
 		Get_Error +=1;
-		return;
+		return false;
 	}
 	if (EEData.BusStopNo[1] == 0 && EEData.BusStopNo[0] == '0' )
   {
@@ -826,14 +895,16 @@ void GET_Infor_from_Wifi()
 	Get_Error +=1;
   }
   client1.stop();
+  if (e_bytesRecv>0) return true;
+  else return false;
 }
-void GET_Route_from_Wifi(char *routerID)
+bool GET_Route_from_Wifi(char *routerID)
 {
 	if  (WiFi.status() != WL_CONNECTED)
 	{
 		DEBUG_SERIAL("Wifi Not connected\n");
 		Get_Error +=1;
-		return;
+		return false;
 	}
 	WiFiClient client1;
 	//DEBUG_SERIAL("connect to %s:%s\n",EEData.host,EEData.port);
@@ -865,6 +936,8 @@ void GET_Route_from_Wifi(char *routerID)
 	Get_Error +=1;
   }
   client1.stop();
+  if (e_bytesRecv>0) return true;
+  else return false;
 }
 int handleHeaderResponse(WiFiClient cli,const unsigned long getTimeout)
 {
@@ -1179,6 +1252,17 @@ uint8_t Send_BusInfor()
   //DEBUG_SERIAL("step=%d\n",step);
   return step;
 }
+bool Send_BusConfig()
+{
+	bool b = false;
+	
+	return b;
+}
+bool Send_BusRoute(char *routerID)
+{
+	bool b = false;
+	return b;
+}
 void Send_DateTime()
 {
 	uint32_t t = Now();
@@ -1372,5 +1456,131 @@ byte BCC(char* from, int len)
 	}
 	return bcc;
 }
+void Get_BusInfor_from_buffer()
+{
 
+	char* p,*p1,*p_endline;
+	bool bok=false;
+	uint8_t disp_index = 0;
+	//
+	for (int i=0;i<Bus_count;i++)
+	{
+		Bus[i].visible = false;
+		Bus[i].changed = false; //Set = false if sent ok
+	}
+	p = strstr(data_buffer,"[{");
+	while(p){
+	bus_struct bus_temp;
+	p1 = p + 1;
+	p_endline = strstr(p1,"},");
+	if (p_endline == NULL) p_endline = strstr(p1,"}]");
+	if (p_endline == NULL) break;
+	p = strstr(p1,"matuyen");
+	if (p==NULL) break;
+	if (p > p_endline) {p = p_endline; continue;};
+	p1 = strchr(p,':') + 2;
+	p = strchr(p1,'"');
+	*p = 0;
+	memcpy(&bus_temp.route_no[0],p1,sizeof(bus_temp.route_no)-1);
+	*p = '"';
+	//
+	/* p1 = p + 1;
+	p = strstr(p1,"tentuyen");
+	if (p==NULL) continue;
+	if (p > p_endline) {p = p_endline; continue;};
+	p1 = strchr(p,':') + 2;
+	p = strchr(p1,'"');
+	*p = 0;
+	memcpy(&bus_temp.bus_name[0],p1,sizeof(bus_temp.bus_name)-1);
+	debugSerial.println(bus_temp.bus_name);
+	int name_len = p-p1; */
+	//
+	p1 = p + 1;
+	p = strstr(p1,"biensoxe");
+	if (p==NULL) continue;
+	if (p > p_endline) {p = p_endline; continue;};
+	p1 = strchr(p,':') + 2;
+	p = strchr(p1,'"');
+	*p = 0;
+	memcpy(&bus_temp.car_no[0],p1,sizeof(bus_temp.car_no)-1);
+	*p = '"';
+	//
+	p1 = p + 1;
+	p = strstr(p1,"soluonghanhkhach");
+	if (p==NULL) continue;
+	if (p > p_endline) {p = p_endline; continue;};
+	p1 = strchr(p,':') + 1;
+	p = strchr(p1,',');
+	*p = 0;
+	memcpy(&bus_temp.passenger[0],p1,sizeof(bus_temp.passenger)-1);
+	*p = ',';
+	//
+	p1 = p + 1;
+	p = strstr(p1,"thoigianden"); //"thoigianden":"07:48:00"
+	if (p==NULL) continue;
+	if (p > p_endline) {p = p_endline; continue;};
+	p1 = strchr(p,':') + 2;
+	p = strchr(p1,'"');
+	*p = 0;
+	memcpy(&bus_temp.time_arrival[0],p1,sizeof(bus_temp.time_arrival)-1);
+	*p = '"';
+	//
+	/* p1 = p + 1;
+	p = strstr(p1,"Benden"); //"Benden":"Bến chợ Hàn"
+	if (p==NULL) continue;
+	if (p > p_endline) {p = p_endline; continue;};
+	p1 = strchr(p,':') + 2;
+	p = strchr(p1,'"');
+	*p = 0;
+	memcpy(&bus_temp.station_to[0],p1,sizeof(bus_temp.station_to)-1);
+	debugSerial.println(bus_temp.station_to);
+	//
+	p1 = p + 1;
+	p = strstr(p1,"Bendi"); //"Bendi":"Bến Kim Liên"
+	if (p==NULL) continue;
+	if (p > p_endline) {p = p_endline; continue;};
+	p1 = strchr(p,':') + 2;
+	p = strchr(p1,'"');
+	*p = 0;
+	memcpy(&bus_temp.station_from[0],p1,sizeof(bus_temp.station_from)-1);
+	debugSerial.println(bus_temp.station_from); */
+	//
+	
+	p = p_endline;
+	//
+	bool exist = false;
+	int id = 0;
+	for (id=0;id<Bus_count;id++)
+	{
+		if(strstr(bus_temp.route_no,Bus[id].route_no))
+		{
+			exist = true;
+			Bus[id].visible = true;
+			if(disp_index != Bus[id].display_index) {DEBUG_SERIAL("display_index changed\n");Bus[id].changed = true; break;}
+			if(strstr(bus_temp.car_no,Bus[id].car_no) == NULL) {DEBUG_SERIAL("car_no changed\n");Bus[id].changed = true; break;}
+			if(strstr(bus_temp.time_arrival,Bus[id].time_arrival) == NULL) {DEBUG_SERIAL("time_arrival changed\n");Bus[id].changed = true; break;}
+			break;
+		}
+	}
+	if (!exist) 
+	{
+		id = Bus_count++;
+		Bus[id].changed = true;
+		Bus[id].visible = true;
+	}
+	if (Bus[id].changed)
+	{
+		Bus[id].display_index = disp_index;
+		memcpy(&Bus[id].route_no[0],bus_temp.route_no,sizeof(Bus[id].route_no)-1);
+		memcpy(&Bus[id].car_no[0],bus_temp.car_no,sizeof(Bus[id].car_no)-1);
+		memcpy(&Bus[id].time_arrival[0],bus_temp.time_arrival,sizeof(Bus[id].time_arrival)-1);
+	}
+	DEBUG_SERIAL("display_index=%d, route_no=%s, car_no=%s, time_arrival=%s, changed=%d, visible=%d\n",Bus[id].display_index,Bus[id].route_no,Bus[id].car_no,Bus[id].time_arrival,Bus[id].changed,Bus[id].visible);
+	
+	disp_index+=1;
+	if (Bus_count >= Bus_Max) break;
+	};
+	
+	
+}
 
