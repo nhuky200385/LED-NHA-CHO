@@ -209,6 +209,7 @@ uint32_t last_ConfigTime = 0;
 #define Bus_Max 10
 int Bus_count;
 bus_struct Bus[Bus_Max];
+byte Bus_sort[Bus_Max];
 
 void Read_Config(bool bdefault = false);
 uint8_t Send_BusConfig(bool isfrom_buffer = false);
@@ -442,17 +443,6 @@ void loop() {
 	 //Send_DateTime();
 	 if (Comm_Infor == isBusInfo) {
 		 Get_BusInfor_from_buffer();
-		 //Send_BusInfor();
-		 for (int i=0;i<Bus_count;i++)
-		 {			 
-			if (Bus[i].changed || Bus[i].visible == false)
-			{
-				sprintf(data_buffer,"[index=%d,route_no=%s,car_no=%s,time=%s,passenger=%s,visible=%d,]\0",Bus[i].display_index,Bus[i].route_no,Bus[i].car_no,Bus[i].time_arrival,Bus[i].passenger,Bus[i].visible);
-				DEBUG_SERIAL("%s\n",data_buffer);
-				Send_data2display(Begin_BusInfo,End_BusInfo);
-				
-			}
-		 }
 		 //Send config
 		 if (!Config_sent)
 		 {
@@ -472,6 +462,43 @@ void loop() {
 				else break;
 			}
 		 }
+		 //Send_BusInfor();
+		 String s="[";
+		 for (int k=0;k<Bus_count;k++)
+		 {
+			 int i = Bus_sort[k];
+			//if (Bus[i].changed || 
+			if(Bus[i].visible)
+			{
+				s += "{";
+				// char *p2 = &Bus[i].route_no[0];
+				// DEBUG_SERIAL("Bus %d: ",i);
+				// while (*p2>0) DEBUG_SERIAL("%2X ",*p2++);
+				// DEBUG_SERIAL("\n");
+				//sprintf(data_buffer,"[index=%d,route_no=%s,car_no=%s,time=%s,passenger=%s,visible=%d,]\0",Bus[i].display_index,Bus[i].route_no,Bus[i].car_no,Bus[i].time_arrival,Bus[i].passenger,Bus[i].visible);
+				//s += "index=" + String(Bus[i].display_index);
+				s += "route_no=" + String(Bus[i].route_no);
+				if (Bus[i].changed == false) s += ",no_change";
+				else{
+				s += ",car_no=" + String(Bus[i].car_no);
+				s += ",time=" + String(Bus[i].time_arrival);
+				s += ",passenger=" + String(Bus[i].passenger);
+				//s += ",visible=" + String(Bus[i].visible);
+				}
+				s += ",}";
+				//DEBUG_SERIAL("%s\n",data_buffer);
+				//Send_data2display(Begin_BusInfo,End_BusInfo);
+				
+			}
+		 }
+		s += "]";
+		s.toCharArray(data_buffer,sizeof(data_buffer)-1);
+		DEBUG_SERIAL("%s\n",data_buffer);
+		if (Send_data2display(Begin_BusInfo,End_BusInfo))
+		{
+			for (int k=0;k<Bus_count;k++) Bus[k].changed = false;
+		}
+		 
 	 }
 	 if (Comm_Infor>0) Comm_Infor=0;
 	 lastGet_timeStamp = millis();
@@ -720,6 +747,7 @@ void Reset_Bus()
 		Bus[i].route_sent = false;
 		Bus[i].display_index = 0;
 	}
+	Bus_count = 0;
 	unixTime_sent = 0;
 	Config_sent = false;
 	last_ConfigTime = 0;
@@ -1237,7 +1265,7 @@ uint8_t Check_display_Running()
 	displaySerial.print(CheckRunning);
 	  do {
 		  wdt_reset();
-		if (displaySerial.available()) {
+		  if (displaySerial.available()) {
 			wdt_reset();
 		  char c = displaySerial.read();
 		  t = millis();
@@ -1264,6 +1292,7 @@ uint8_t Check_display_Running()
 		  }
 		  if (strstr(tempbuffer, StartUp)) {
 		   DEBUG_SERIAL("[DISPLAY] %s\n", StartUp);
+		   bDisplay_isRunning = true;
 		   lastGet_timeStamp = 0;
 		   ret = true;
 		   Comm_Error = 0;
@@ -1276,6 +1305,7 @@ uint8_t Check_display_Running()
 	  else DEBUG_SERIAL(tempbuffer);
   }
   if (!ret) Comm_Error += 1;
+  if (n==0) DEBUG_SERIAL("[DISPLAY] NOT Response\n");
   return Comm_Error;
 }
 void Reset_display()
@@ -1429,7 +1459,7 @@ bool Send_DateTime()
 {
 	uint32_t t = Now();
 	sprintf(data_buffer,"[%lu]",t);	
-	DEBUG_SERIAL("%s\n",data_buffer);
+	//DEBUG_SERIAL("%s\n",data_buffer);
 	if (Send_data2display(&Begin_SetTime[0],&End_SetTime[0])==3) return true;
 	return false;
 }
@@ -1628,7 +1658,7 @@ void Get_BusInfor_from_buffer()
 	for (int i=0;i<Bus_count;i++)
 	{
 		Bus[i].visible = false;
-		Bus[i].changed = false; //Set = false if sent ok
+		//Bus[i].changed = false; //Set = false if sent ok
 	}
 	p = strstr(data_buffer,"[{");
 	while(p){
@@ -1714,7 +1744,7 @@ void Get_BusInfor_from_buffer()
 		int id = 0;
 		for (id=0;id<Bus_count;id++)
 		{
-			if(Compare2array(bus_temp.route_no,Bus[id].route_no))
+			if((Bus[id].route_no[0] == 0) || Compare2array(bus_temp.route_no,Bus[id].route_no))
 			{
 				exist = true;
 				Bus[id].visible = true;
@@ -1724,21 +1754,23 @@ void Get_BusInfor_from_buffer()
 				break;
 			}
 		}
-		if (!exist) 
+		if (!exist)
 		{
 			id = Bus_count++;
 			Bus[id].changed = true;
 			Bus[id].visible = true;
+			DEBUG_SERIAL("New Bus, Bus_count=%d\n",Bus_count);
 		}
 		if (Bus[id].changed)
 		{
+			Bus_sort[disp_index] = id;
 			Bus[id].display_index = disp_index;
 			memcpy(&Bus[id].route_no[0],bus_temp.route_no,sizeof(Bus[id].route_no)-1);
 			memcpy(&Bus[id].car_no[0],bus_temp.car_no,sizeof(Bus[id].car_no)-1);
 			memcpy(&Bus[id].time_arrival[0],bus_temp.time_arrival,sizeof(Bus[id].time_arrival)-1);
 			memcpy(&Bus[id].passenger[0],bus_temp.passenger,sizeof(Bus[id].passenger)-1);
 		}
-		DEBUG_SERIAL("display_index=%d, route_no=%s, car_no=%s, time_arrival=%s, changed=%d, visible=%d\n",Bus[id].display_index,Bus[id].route_no,Bus[id].car_no,Bus[id].time_arrival,Bus[id].changed,Bus[id].visible);
+		DEBUG_SERIAL("Bus %d: index=%d, route_no=%s, car_no=%s, time_arrival=%s, changed=%d, visible=%d\n",id,Bus[id].display_index,Bus[id].route_no,Bus[id].car_no,Bus[id].time_arrival,Bus[id].changed,Bus[id].visible);
 		
 		disp_index+=1;
 		if (Bus_count >= Bus_Max) break;
