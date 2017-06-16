@@ -1,4 +1,4 @@
-// compiled paht C:\Users\LT-N2K\AppData\Local\Temp
+// compiled path C:\Users\LT-N2K\AppData\Local\Temp
 
 #include <memory>
 #include <Arduino.h>
@@ -8,10 +8,16 @@
 #include <ESP8266HTTPUpdateServer.h>
 #include <ESP8266HTTPClient.h>
 #include <SoftwareSerial.h>
+#include <WiFiUdp.h>
 
 
 #include <SPI.h>
 #include <Ethernet.h>
+
+// A UDP instance to let us send and receive packets over UDP
+WiFiUDP udp;
+unsigned int udpPort = 11000;  // local port to listen on
+
 // Enter a MAC address and IP address for your controller below.
 // The IP address will be dependent on your local network:
 byte mac[] = {
@@ -56,7 +62,8 @@ SoftwareSerial swSer(5,4, false, 256); //RX, TX
 //uint8_t Interface=0;
 
 
-#define time_get 15 //seconds
+// #define time_getInfor 15 //seconds
+// #define time_checkconfig 300 //seconds
 
 
 #define Set_EthIP "EthIP="
@@ -69,17 +76,21 @@ SoftwareSerial swSer(5,4, false, 256); //RX, TX
 #define Set_Infor_arg "Infor_arg="
 #define Set_Config_arg "Config_arg="
 #define Set_Route_arg "Route_arg="
-#define Check_Config "Config?"
+#define Set_time_getInfor "TgetInfor="
+#define Set_time_checkconfig "TcheckConfig="
+#define Show_Config "Config?"
 #define StartUp "StartUp"
-#define BusInfo "BusInfo"
+#define Begin_BusInfo "BusInfo"
 #define End_BusInfo "End_Info"
-#define BusConfig "BusConfig"
+#define Begin_BusConfig "BusConfig"
 #define End_BusConfig "End_Config"
+#define Begin_BusRoute "BusRoute"
+#define End_BusRoute "End_Route"
 #define CheckRunning "Running?"
-#define Running "DISPLAY"
-#define Idle "Idle"
-#define Set_Time "SetTime="
-#define End_Time "End_Time"
+#define Running "RUNNING"
+#define Idle "IDLE"
+#define Begin_SetTime "Set_Time"
+#define End_SetTime "End_Time"
 #define Set_Brightness "Set_Brightness="
 #define End_Brightness "End_Brightness"
 #define CheckSum_Fail "CheckSum_Fail"
@@ -141,6 +152,7 @@ HTTPClient http;
 
 unsigned long Startup_timestamp;
 unsigned long lastGet_timeStamp;
+unsigned long lastCheckConfig_timeStamp;
 
 bool PW_On=false;
 bool AP_On=false;
@@ -150,10 +162,11 @@ float voltage;
 bool timer0_en;
 bool firstScan;
 bool RF_Disable;
-bool detected_NetworkTime;
+bool bDisplay_isRunning;
 bool bGet_condition,bGet_config;
+bool bDateTime_OK = false;
 
-uint32_t unixTime_send;
+uint32_t unixTime_sent;
 uint32_t Unixtime_GMT7;
 uint32_t time_bk;
 #define SECONDS_FROM_1970_TO_2000 946684800
@@ -177,6 +190,8 @@ struct {
   uint32_t port;
   IPAddress ethIP; //4 bytes
   uint32_t Interface;
+  uint32_t time_getInfor; //in seconds
+  uint32_t time_checkconfig; //seconds
   char WiFi_Pass[20];
   char WiFi_Name[20];
 } EEData;
@@ -185,14 +200,18 @@ typedef struct {
 	char route_no[12],car_no[12],time_arrival[6],passenger[10];
 	bool changed;
 	bool visible;
-	bool configured;
+	bool route_sent;
 }bus_struct;
+bool Config_sent = false;
+bool bisNew_Config = false;
+uint32_t last_ConfigTime = 0;
 
 #define Bus_Max 10
 int Bus_count;
 bus_struct Bus[Bus_Max];
 
 void Read_Config(bool bdefault = false);
+uint8_t Send_BusConfig(bool isfrom_buffer = false);
 
 
 void printConfig()
@@ -206,6 +225,8 @@ void printConfig()
 	DEBUG_SERIAL("EthernetIP=%d.%d.%d.%d\n",EEData.ethIP[0],EEData.ethIP[1],EEData.ethIP[2],EEData.ethIP[3]);
 	DEBUG_SERIAL("%s%s\n",Set_Interface,EEData.Interface == from_Ethernet ? "Ethernet" : "WIFI");
 	DEBUG_SERIAL("%s%s,%s\n",Set_Wifi,EEData.WiFi_Name,EEData.WiFi_Pass);
+	DEBUG_SERIAL("time_getInfor=%ds\n",EEData.time_getInfor);
+	DEBUG_SERIAL("time_checkconfig=%ds\n",EEData.time_checkconfig);
 }
 void Read_Config(bool bdefault)
 {
@@ -233,6 +254,8 @@ void Read_Config(bool bdefault)
 		DEBUG_SERIAL("Set to default Config\n");
 		EEData.ethIP = {192,168,1,10};
 		EEData.Interface=from_Ethernet;
+		EEData.time_getInfor = 20; //s
+		EEData.time_checkconfig = 300; //5M
 		memcpy(&EEData.WiFi_Name[0],"3G\0",sizeof(EEData.WiFi_Name));
 		memcpy(&EEData.WiFi_Pass[0],"1234567890\0",sizeof(EEData.WiFi_Pass));
 		memcpy(&EEData.host[0],"bus.danang.gov.vn\0",sizeof(EEData.host));
@@ -260,7 +283,7 @@ void SetupWifi()
 	 WiFi.mode(WIFI_AP_STA);
 	 int count =20;
 	  //
-	  WiFi.begin(EEData.WiFi_Name, EEData.WiFi_Pass); //"3G","1234567890"
+	  WiFi.begin(EEData.WiFi_Name, EEData.WiFi_Pass);
 	  WiFi.softAP(chipID, password_ap);
 	 count =20;
 	while (WiFi.status() != WL_CONNECTED) {
@@ -284,6 +307,8 @@ void SetupWifi()
 	  
 	 httpUpdater.setup(&httpServer, update_path, update_username, update_password);
 	 httpServer.begin();
+	 //
+	 udp.begin(udpPort);
 }
 void StartEthernet()
 {
@@ -384,16 +409,20 @@ void loop() {
 	//
 	bGet_condition=false; 
   uint32_t time = Now();
-  if (time%10 == 0 && time != time_bk)
+  if (bDateTime_OK && (time < unixTime_sent || time - unixTime_sent >300))
+  {	  
+	  if (Send_DateTime()) unixTime_sent = time;
+	  else unixTime_sent = time-290;  //resend after 10 s;
+  }
+  if (firstScan || (time%10 == 0 && time != time_bk))
   {
 	  time_bk = time;
 	  DEBUG_SERIAL("%02d:%02d:%02d\n",rtc.hour,rtc.minute,rtc.second);	  
 	  if (Check_display_Running()>=6) Reset_display();
   }
-  //if (time%time_get==0 || firstScan) bGet_condition=true;//5m
-  if (millis()-lastGet_timeStamp>(time_get*1000) || firstScan) 
+  if (millis()-lastGet_timeStamp>(EEData.time_getInfor*1000) || firstScan) 
   {
-	   bGet_condition = true;
+	   if (bDisplay_isRunning) bGet_condition = true;
   }
   if (bGet_condition)
  {
@@ -409,16 +438,54 @@ void loop() {
 			 Get_Error=0;
 			 DEBUG_SERIAL("Reset Ethernet Shield\n");
 			 StartEthernet();
-		 }
-	 lastGet_timeStamp = millis();	 
-	 Send_DateTime();
+		 }	 
+	 //Send_DateTime();
 	 if (Comm_Infor == isBusInfo) {
 		 Get_BusInfor_from_buffer();
-		 Send_BusInfor();
+		 //Send_BusInfor();
+		 for (int i=0;i<Bus_count;i++)
+		 {			 
+			if (Bus[i].changed || Bus[i].visible == false)
+			{
+				sprintf(data_buffer,"[index=%d,route_no=%s,car_no=%s,time=%s,passenger=%s,visible=%d,]\0",Bus[i].display_index,Bus[i].route_no,Bus[i].car_no,Bus[i].time_arrival,Bus[i].passenger,Bus[i].visible);
+				DEBUG_SERIAL("%s\n",data_buffer);
+				Send_data2display(Begin_BusInfo,End_BusInfo);
+				
+			}
+		 }
+		 //Send config
+		 if (!Config_sent)
+		 {
+			if (Send_BusConfig() == 3) 
+			{
+				Config_sent = true;
+				bisNew_Config = false;
+				lastCheckConfig_timeStamp = millis();
+			}
+		 }
+		 //Send Route Infomation
+		 for (int i=0;i<Bus_count;i++)
+		 {
+			if (!Bus[i].route_sent)
+			{
+				if (Send_BusRoute(&Bus[i].route_no[0]) == 3) Bus[i].route_sent = true;
+				else break;
+			}
+		 }
 	 }
 	 if (Comm_Infor>0) Comm_Infor=0;
+	 lastGet_timeStamp = millis();
 }
+//check config
+if (bDisplay_isRunning && millis()-lastCheckConfig_timeStamp>(EEData.time_checkconfig*1000)) 
+  {
+	Get_Config();
+	if (bisNew_Config) Send_BusConfig(true); //from buffer
+	lastCheckConfig_timeStamp = millis(); 
+  }
  DebugFromDisplay();
+ //
+ Check_udp_packet();
  //
  firstScan=false;
 }
@@ -479,6 +546,32 @@ void Wifi_Server()
 		com_buffer[com_buffer_len] =0;
 		Process_Com_buffer();
 	}
+}
+void Check_udp_packet()
+{
+	int packetSize = udp.parsePacket();
+  if (packetSize) {
+    IPAddress remoteIp = udp.remoteIP();
+	DEBUG_SERIAL("UDP from: %d.%d.%d.%d, port %d\n",remoteIp[0],remoteIp[1],remoteIp[2],remoteIp[3],udp.remotePort());
+
+    // read the packet into packetBufffer
+    int len = udp.read(tempbuffer, sizeof(tempbuffer));
+    if (len > 0) {
+      tempbuffer[len+1] = 0;
+	  wdt_reset();
+    }
+    DEBUG_SERIAL("%s\n",String(tempbuffer).c_str());
+		//Send to back udp server	 
+	if (strstr(tempbuffer,"???") != NULL)
+	{
+		IPAddress ip = WiFi.localIP();
+	    if (WiFi.status() != WL_CONNECTED) ip = WiFi.softAPIP();
+		sprintf(tempbuffer,"chipID=%s\nSketch=%s\nCompiled on=%s %s\nWiFi IP: %d.%d.%d.%d\n", chipID,String(sketch_name).c_str(),__DATE__,__TIME__,ip[0],ip[1],ip[2],ip[3]);
+		udp.beginPacket(remoteIp, udp.remotePort());
+		udp.print(tempbuffer);
+		udp.endPacket();
+	}
+  }
 }
 void Process_Com_buffer()
 {
@@ -580,11 +673,25 @@ void Process_Com_buffer()
 			Save_Config();
 			printConfig();
 		}
+		else if (strstr(com_buffer, Set_time_getInfor))
+		{
+			p = strstr(com_buffer, Set_time_getInfor) + sizeof(Set_time_getInfor) - 1;
+			EEData.time_getInfor = atoi(p);
+			DEBUG_SERIAL("%s%ds\n",Set_time_getInfor,EEData.time_getInfor);
+			Save_Config();
+		}
+		else if (strstr(com_buffer, Set_time_checkconfig))
+		{
+			p = strstr(com_buffer, Set_time_checkconfig) + sizeof(Set_time_checkconfig) - 1;
+			EEData.time_checkconfig = atoi(p);
+			DEBUG_SERIAL("%s%ds\n",Set_time_checkconfig,EEData.time_checkconfig);
+			Save_Config();
+		}
 		else if (strstr(com_buffer, Set_Default))
 		{			
 			Read_Config(true);
 		}
-		else if (strstr(com_buffer, Check_Config))
+		else if (strstr(com_buffer, Show_Config))
 		{			
 			printConfig();
 		}
@@ -593,11 +700,53 @@ void Process_Com_buffer()
 			displaySerial.write(com_buffer,com_buffer_len);
 		}
 }
+void Reset_Bus()
+{
+	/* typedef struct {
+		uint8_t display_index;
+		char route_no[12],car_no[12],time_arrival[6],passenger[10];
+		bool changed;
+		bool visible;
+		bool route_sent;
+	}bus_struct; */
+	for (int i=0;i<Bus_Max;i++)
+	{
+		Bus[i].route_no[0] = 0;
+		Bus[i].car_no[0] = 0;
+		Bus[i].time_arrival[0] = 0;
+		Bus[i].passenger[0] = 0;
+		Bus[i].changed = false;
+		Bus[i].visible = false;
+		Bus[i].route_sent = false;
+		Bus[i].display_index = 0;
+	}
+	unixTime_sent = 0;
+	Config_sent = false;
+	last_ConfigTime = 0;
+}
 bool Get_Config()
 {
-	if (EEData.Interface == from_Ethernet) return GET_Config_from_Ethernet();
-	else if (EEData.Interface == from_WIFI) return GET_Config_from_Wifi();
-	else return false;
+	bool b = false;
+	bisNew_Config = false;
+	if (EEData.Interface == from_Ethernet) b= GET_Config_from_Ethernet();
+	else if (EEData.Interface == from_WIFI) b= GET_Config_from_Wifi();
+	if (b)
+	{
+		//"ConfigTime":1497078249}
+		char *p = strstr(data_buffer,"ConfigTime");
+		if (p)
+		{
+			p = strchr(p,':') + 1;
+			uint32_t ts = atol(p);
+			if (ts != last_ConfigTime)
+			{
+				bisNew_Config = true;				
+				DEBUG_SERIAL("New Config %lu != %lu\n",last_ConfigTime,ts);
+				last_ConfigTime = ts;
+			}
+		}
+	}
+	return b;
 }
 bool Get_Infor()
 {
@@ -605,14 +754,15 @@ bool Get_Infor()
 	else if (EEData.Interface == from_WIFI) return GET_Infor_from_Wifi();
 	else return false;
 }
-bool Get_Route(char *routerID)
+bool Get_Route(char *routeNo)
 {
-	if (EEData.Interface == from_Ethernet) return GET_Route_from_Ethernet(routerID);
-	else if (EEData.Interface == from_WIFI) return GET_Route_from_Wifi(routerID);
+	if (EEData.Interface == from_Ethernet) return GET_Route_from_Ethernet(routeNo);
+	else if (EEData.Interface == from_WIFI) return GET_Route_from_Wifi(routeNo);
 	else return false;
 }
 bool GET_Config_from_Ethernet()
 {
+	data_buffer[0] = 0;
 	//DEBUG_SERIAL("connect to %s:%s\n",EEData.host,EEData.port);
   if (Eclient.connect(EEData.host, EEData.port)) {
     DEBUG_SERIAL("connected\n");
@@ -636,7 +786,7 @@ bool GET_Config_from_Ethernet()
 		Comm_Infor = isBusConfig;
 		//Send_BusInfor();
 		}
-	}
+	}else e_bytesRecv = 0;
 	if (header_time != "")
 	{
 		//DEBUG_SERIAL("%s\n",header_time.c_str());
@@ -653,6 +803,7 @@ bool GET_Config_from_Ethernet()
 }
 bool GET_Infor_from_Ethernet()
 {
+	data_buffer[0] = 0;
   if (EEData.BusStopNo[1] == 0 && EEData.BusStopNo[0] == '0' )
   {
 	 DEBUG_SERIAL("Not yet config BusStop=%s\n",EEData.BusStopNo);
@@ -680,7 +831,7 @@ bool GET_Infor_from_Ethernet()
 		Comm_Infor = isBusInfo;
 		//Send_BusInfor();
 		}
-	}
+	}else e_bytesRecv = 0;
 	if (header_time != "")
 	{
 		//DEBUG_SERIAL("%s\n",header_time.c_str());
@@ -695,15 +846,16 @@ bool GET_Infor_from_Ethernet()
   if (e_bytesRecv>0) return true;
   else return false;
 }
-bool GET_Route_from_Ethernet(char* routerID)
+bool GET_Route_from_Ethernet(char* routeNo)
 {
+	data_buffer[0] = 0;
 	//DEBUG_SERIAL("connect to %s:%s\n",EEData.host,EEData.port);
   if (Eclient.connect(EEData.host, EEData.port)) {
     DEBUG_SERIAL("connected\n");
     // Make a HTTP request:
     //Eclient.println("GET /bus-services-api/BusInfo?content=mt%2068 HTTP/1.1");
-	DEBUG_SERIAL("GET %s%s HTTP/1.1\n",EEData.route_arg,routerID);
-	Eclient.printf("GET %s%s HTTP/1.1\n",EEData.route_arg,routerID);
+	DEBUG_SERIAL("GET %s%s HTTP/1.1\n",EEData.route_arg,routeNo);
+	Eclient.printf("GET %s%s HTTP/1.1\n",EEData.route_arg,routeNo);
     Eclient.print("Host: ");
 	Eclient.println(EEData.host);
     Eclient.println("Connection: close");
@@ -719,7 +871,7 @@ bool GET_Route_from_Ethernet(char* routerID)
 		debugSerial.println(data_buffer);
 		Comm_Infor = isBusRoute;
 		}
-	}
+	}else e_bytesRecv = 0;
   }
   else {
     DEBUG_SERIAL("connection failed\n");
@@ -803,6 +955,7 @@ int handleHeaderResponse(EthernetClient cli,const unsigned long getTimeout)
 }
 bool GET_Config_from_Wifi()
 {
+	data_buffer[0] = 0;
 	if  (WiFi.status() != WL_CONNECTED)
 	{
 		DEBUG_SERIAL("Wifi Not connected\n");
@@ -832,7 +985,7 @@ bool GET_Config_from_Wifi()
 		debugSerial.println(data_buffer);
 		Comm_Infor = isBusConfig;
 		}
-	}
+	}else e_bytesRecv = 0;
 	if (header_time != "")
 	{
 		//DEBUG_SERIAL("%s\n",header_time.c_str());
@@ -849,6 +1002,7 @@ bool GET_Config_from_Wifi()
 }
 bool GET_Infor_from_Wifi()
 {
+	data_buffer[0] = 0;
 	if  (WiFi.status() != WL_CONNECTED)
 	{
 		DEBUG_SERIAL("Wifi Not connected\n");
@@ -883,7 +1037,7 @@ bool GET_Infor_from_Wifi()
 		Comm_Infor = isBusInfo;
 		//Send_BusInfor();
 		}
-	}
+	}else e_bytesRecv = 0;
 	if (header_time != "")
 	{
 		//DEBUG_SERIAL("%s\n",header_time.c_str());
@@ -898,8 +1052,9 @@ bool GET_Infor_from_Wifi()
   if (e_bytesRecv>0) return true;
   else return false;
 }
-bool GET_Route_from_Wifi(char *routerID)
+bool GET_Route_from_Wifi(char *routeNo)
 {
+	data_buffer[0] = 0;
 	if  (WiFi.status() != WL_CONNECTED)
 	{
 		DEBUG_SERIAL("Wifi Not connected\n");
@@ -912,8 +1067,8 @@ bool GET_Route_from_Wifi(char *routerID)
     DEBUG_SERIAL("connected\n");
     // Make a HTTP request:
     //client1.println("GET /bus-services-api/getConfigLed HTTP/1.1");
-	DEBUG_SERIAL("GET %s%s HTTP/1.1\n",EEData.route_arg,routerID);
-	client1.printf("GET %s%s HTTP/1.1\n",EEData.route_arg,routerID);
+	DEBUG_SERIAL("GET %s%s HTTP/1.1\n",EEData.route_arg,routeNo);
+	client1.printf("GET %s%s HTTP/1.1\n",EEData.route_arg,routeNo);
     client1.print("Host: ");
 	client1.println(EEData.host);
     client1.println("Connection: close");
@@ -930,6 +1085,7 @@ bool GET_Route_from_Wifi(char *routerID)
 		Comm_Infor = isBusRoute;
 		}
 	}
+	else e_bytesRecv = 0;
   }
   else {
     DEBUG_SERIAL("connection failed\n");
@@ -1058,6 +1214,7 @@ bool GetTime_fromHeader()
 		  Now();
 		  DEBUG_SERIAL("DateTime: %02d/%02d/%02d %02d:%02d:%02d\n",rtc.year,rtc.month,rtc.day,rtc.hour,rtc.minute,rtc.second);
 		  bok = true;
+		  bDateTime_OK = true;
 		  break;
 	  }
 	}
@@ -1071,6 +1228,7 @@ uint8_t Check_display_Running()
 	int n = 0;
 	int retry=2;
 	bool ret=false;
+	bDisplay_isRunning = false;
   while(retry-->0)
   {
 	  n=0;
@@ -1091,22 +1249,25 @@ uint8_t Check_display_Running()
 		  tempbuffer[n++] = c;
 		  tempbuffer[n] = 0;		  
 		  if (strstr(tempbuffer, Running)) {
-		   DEBUG_SERIAL("[DISPLAY] OK\n");
+		   DEBUG_SERIAL("[DISPLAY] %s\n",Running);
 		   ret = true;
+		   bDisplay_isRunning = true;
 		   Comm_Error = 0;
 		   break;
 		  }
 		  if (strstr(tempbuffer, Idle)) {
-		   DEBUG_SERIAL("[DISPLAY] Idle\n");
+		   DEBUG_SERIAL("[DISPLAY] %s\n",Idle);
 		   ret = true;
+		   bDisplay_isRunning = false;
 		   Comm_Error = 0;
 		   break;
 		  }
 		  if (strstr(tempbuffer, StartUp)) {
-		   DEBUG_SERIAL("[DISPLAY] OK\n");
+		   DEBUG_SERIAL("[DISPLAY] %s\n", StartUp);
 		   lastGet_timeStamp = 0;
 		   ret = true;
 		   Comm_Error = 0;
+		   Reset_Bus();
 		   break;
 		  }
 		}
@@ -1132,11 +1293,14 @@ uint8_t Send_BusInfor()
 {
 	if (Comm_Infor != isBusInfo) return 0;
 	Comm_Infor = isBusIdle;
-	char tempbuffer[100];	
-	uint32_t t;
-	uint32_t timeout = 2000;
+	return Send_data2display(&Begin_BusInfo[0],&End_BusInfo[0]);
+}
+uint8_t Send_data2display(const char* begin,const char* end)
+{
+  uint32_t t;
+  uint32_t timeout = 2000;
   int n = 0;
-  int retry=3;
+  int retry=2;
   int step=0;
   char *p,*p1;
   //
@@ -1144,19 +1308,19 @@ uint8_t Send_BusInfor()
 	p1 =strchr(data_buffer,']');
   if (p==NULL || p1==NULL)
   {
-	  DEBUG_SERIAL("%s Not OK\n",BusInfo);
+	  DEBUG_SERIAL("%s Not OK\n",begin);
 	 return 0;
   }
   int size = (p1 - p) + 1;
   byte bcc = BCC(p,size);
-  DEBUG_SERIAL("Send %s\n",BusInfo);
+  DEBUG_SERIAL("Send %s\n",begin);
   while(retry-->0)
   {
 	  n=0;
 	  step=0;
 	  t = millis();
 	purgedisplaySerial();
-	displaySerial.print(BusInfo);
+	displaySerial.print(begin);
 	
 	  do {
 		  wdt_reset();
@@ -1171,7 +1335,7 @@ uint8_t Send_BusInfor()
 		  }
 		  tempbuffer[n++] = c;
 		  tempbuffer[n] = 0;		  
-		  if (strstr(tempbuffer, BusInfo)) {
+		  if (strstr(tempbuffer, begin)) {
 		   step =1;
 		   break;
 		  }
@@ -1181,25 +1345,22 @@ uint8_t Send_BusInfor()
 	  // else DEBUG_SERIAL(tempbuffer);
   if (step == 1)
   {
-	DEBUG_SERIAL("size=%d,BCC=%d,%s%s\n",size,bcc,Set_busStop,EEData.BusStopNo);
-	displaySerial.printf("size=%d,BCC=%d,%s%s,",size,bcc,Set_busStop,EEData.BusStopNo);
+	DEBUG_SERIAL("size=%d,BCC=%d\n",size,bcc);
+	displaySerial.printf("size=%d,BCC=%d,",size,bcc);
 	//p = &data_buffer[0];
 	int id=0;	
 	while (id<size)
 	{
 		while (displaySerial.available()) displaySerial.read();
 		p = &data_buffer[id]; id +=200;
-		char c = data_buffer[id];
-		data_buffer[id]=0;
-		displaySerial.print(p);
-		data_buffer[id]=c;
-		int dl = 500;
-		/* while (displaySerial.available() == 0) 
-		{
-			delay(1);
-			if (dl--<=0) break;
-		} */
-		delay(50);
+		if (id>sizeof(data_buffer)-1) id = sizeof(data_buffer)-1;
+		
+			char c = data_buffer[id];
+			data_buffer[id]=0;
+			displaySerial.print(p);
+			data_buffer[id]=c;
+			if (id<size) delay(50);
+		
 		wdt_reset();
 	}
 	//displaySerial.print(data_buffer);
@@ -1211,7 +1372,7 @@ uint8_t Send_BusInfor()
 	//
 	n=0;
 	t = millis();
-	displaySerial.println(End_BusInfo);
+	displaySerial.println(end);
 	  do {
 		  wdt_reset();
 		if (displaySerial.available()) {
@@ -1225,9 +1386,9 @@ uint8_t Send_BusInfor()
 		  }
 		  tempbuffer[n++] = c;
 		  tempbuffer[n] = 0;		  
-		  if (strstr(tempbuffer, End_BusInfo)) {
+		  if (strstr(tempbuffer, end)) {
 		   step = 3;		   
-		   DEBUG_SERIAL("Send %s OK\n",BusInfo);
+		   DEBUG_SERIAL("Send %s OK\n",begin);
 		   break;
 		  }
 		  else if (strstr(tempbuffer, CheckSize_Fail)) {
@@ -1242,34 +1403,35 @@ uint8_t Send_BusInfor()
 	  } while (millis() - t < timeout);
   }
   if (step == 3) break;
-  DEBUG_SERIAL("Sync %s timeout\n",BusInfo);
+  DEBUG_SERIAL("Step=%d, Send %s Failed\n",step,begin);
+  DEBUG_SERIAL("tempbuffer=%s\n",tempbuffer);
   if (retry>0)
   {
 	  delay(100);
-	  DEBUG_SERIAL("retry Send %s\n",BusInfo);
+	  DEBUG_SERIAL("retry Send %s\n",begin);
   }
  }
   //DEBUG_SERIAL("step=%d\n",step);
   return step;
 }
-bool Send_BusConfig()
+uint8_t Send_BusConfig(bool isfrom_buffer)
 {
-	bool b = false;
-	
-	return b;
+	if (!isfrom_buffer && Get_Config()) return Send_data2display(&Begin_BusConfig[0],&End_BusConfig[0]);
+	else if (isfrom_buffer) return Send_data2display(&Begin_BusConfig[0],&End_BusConfig[0]);
+	else return 0;
 }
-bool Send_BusRoute(char *routerID)
+uint8_t Send_BusRoute(char *routeNo)
 {
-	bool b = false;
-	return b;
+	if (Get_Route(routeNo)) return Send_data2display(&Begin_BusRoute[0],&End_BusRoute[0]);
+	else return 0;
 }
-void Send_DateTime()
+bool Send_DateTime()
 {
 	uint32_t t = Now();
-	// DEBUG_SERIAL("%s%02d:%02d:%02d%s\n",String(Set_Time).c_str(),rtc.hour,rtc.minute,rtc.second,String(End_Time).c_str());
-	// displaySerial.printf("%s%02d:%02d:%02d%s",String(Set_Time).c_str(),rtc.hour,rtc.minute,rtc.second,String(End_Time).c_str());
-	DEBUG_SERIAL("%s%lu%s\n",String(Set_Time).c_str(),t,String(End_Time).c_str());
-	displaySerial.printf("%s%lu%s",String(Set_Time).c_str(),t,String(End_Time).c_str());
+	sprintf(data_buffer,"[%lu]",t);	
+	DEBUG_SERIAL("%s\n",data_buffer);
+	if (Send_data2display(&Begin_SetTime[0],&End_SetTime[0])==3) return true;
+	return false;
 }
 void convert2upperChar(char *ch)
 {
@@ -1470,117 +1632,126 @@ void Get_BusInfor_from_buffer()
 	}
 	p = strstr(data_buffer,"[{");
 	while(p){
-	bus_struct bus_temp;
-	p1 = p + 1;
-	p_endline = strstr(p1,"},");
-	if (p_endline == NULL) p_endline = strstr(p1,"}]");
-	if (p_endline == NULL) break;
-	p = strstr(p1,"matuyen");
-	if (p==NULL) break;
-	if (p > p_endline) {p = p_endline; continue;};
-	p1 = strchr(p,':') + 2;
-	p = strchr(p1,'"');
-	*p = 0;
-	memcpy(&bus_temp.route_no[0],p1,sizeof(bus_temp.route_no)-1);
-	*p = '"';
-	//
-	/* p1 = p + 1;
-	p = strstr(p1,"tentuyen");
-	if (p==NULL) continue;
-	if (p > p_endline) {p = p_endline; continue;};
-	p1 = strchr(p,':') + 2;
-	p = strchr(p1,'"');
-	*p = 0;
-	memcpy(&bus_temp.bus_name[0],p1,sizeof(bus_temp.bus_name)-1);
-	debugSerial.println(bus_temp.bus_name);
-	int name_len = p-p1; */
-	//
-	p1 = p + 1;
-	p = strstr(p1,"biensoxe");
-	if (p==NULL) continue;
-	if (p > p_endline) {p = p_endline; continue;};
-	p1 = strchr(p,':') + 2;
-	p = strchr(p1,'"');
-	*p = 0;
-	memcpy(&bus_temp.car_no[0],p1,sizeof(bus_temp.car_no)-1);
-	*p = '"';
-	//
-	p1 = p + 1;
-	p = strstr(p1,"soluonghanhkhach");
-	if (p==NULL) continue;
-	if (p > p_endline) {p = p_endline; continue;};
-	p1 = strchr(p,':') + 1;
-	p = strchr(p1,',');
-	*p = 0;
-	memcpy(&bus_temp.passenger[0],p1,sizeof(bus_temp.passenger)-1);
-	*p = ',';
-	//
-	p1 = p + 1;
-	p = strstr(p1,"thoigianden"); //"thoigianden":"07:48:00"
-	if (p==NULL) continue;
-	if (p > p_endline) {p = p_endline; continue;};
-	p1 = strchr(p,':') + 2;
-	p = strchr(p1,'"');
-	*p = 0;
-	memcpy(&bus_temp.time_arrival[0],p1,sizeof(bus_temp.time_arrival)-1);
-	*p = '"';
-	//
-	/* p1 = p + 1;
-	p = strstr(p1,"Benden"); //"Benden":"Bến chợ Hàn"
-	if (p==NULL) continue;
-	if (p > p_endline) {p = p_endline; continue;};
-	p1 = strchr(p,':') + 2;
-	p = strchr(p1,'"');
-	*p = 0;
-	memcpy(&bus_temp.station_to[0],p1,sizeof(bus_temp.station_to)-1);
-	debugSerial.println(bus_temp.station_to);
-	//
-	p1 = p + 1;
-	p = strstr(p1,"Bendi"); //"Bendi":"Bến Kim Liên"
-	if (p==NULL) continue;
-	if (p > p_endline) {p = p_endline; continue;};
-	p1 = strchr(p,':') + 2;
-	p = strchr(p1,'"');
-	*p = 0;
-	memcpy(&bus_temp.station_from[0],p1,sizeof(bus_temp.station_from)-1);
-	debugSerial.println(bus_temp.station_from); */
-	//
-	
-	p = p_endline;
-	//
-	bool exist = false;
-	int id = 0;
-	for (id=0;id<Bus_count;id++)
-	{
-		if(strstr(bus_temp.route_no,Bus[id].route_no))
+		bus_struct bus_temp;
+		p1 = p + 1;
+		p_endline = strstr(p1,"},");
+		if (p_endline == NULL) p_endline = strstr(p1,"}]");
+		if (p_endline == NULL) break;
+		p = strstr(p1,"matuyen");
+		if (p==NULL) break;
+		if (p > p_endline) {p = p_endline; continue;};
+		p1 = strchr(p,':') + 2;
+		p = strchr(p1,'"');
+		*p = 0;
+		memcpy(&bus_temp.route_no[0],p1,sizeof(bus_temp.route_no)-1);
+		*p = '"';
+		//
+		/* p1 = p + 1;
+		p = strstr(p1,"tentuyen");
+		if (p==NULL) continue;
+		if (p > p_endline) {p = p_endline; continue;};
+		p1 = strchr(p,':') + 2;
+		p = strchr(p1,'"');
+		*p = 0;
+		memcpy(&bus_temp.bus_name[0],p1,sizeof(bus_temp.bus_name)-1);
+		debugSerial.println(bus_temp.bus_name);
+		int name_len = p-p1; */
+		//
+		p1 = p + 1;
+		p = strstr(p1,"biensoxe");
+		if (p==NULL) continue;
+		if (p > p_endline) {p = p_endline; continue;};
+		p1 = strchr(p,':') + 2;
+		p = strchr(p1,'"');
+		*p = 0;
+		memcpy(&bus_temp.car_no[0],p1,sizeof(bus_temp.car_no)-1);
+		*p = '"';
+		//
+		p1 = p + 1;
+		p = strstr(p1,"soluonghanhkhach");
+		if (p==NULL) continue;
+		if (p > p_endline) {p = p_endline; continue;};
+		p1 = strchr(p,':') + 1;
+		p = strchr(p1,',');
+		*p = 0;
+		memcpy(&bus_temp.passenger[0],p1,sizeof(bus_temp.passenger)-1);
+		*p = ',';
+		//
+		p1 = p + 1;
+		p = strstr(p1,"thoigianden"); //"thoigianden":"07:48:00"
+		if (p==NULL) continue;
+		if (p > p_endline) {p = p_endline; continue;};
+		p1 = strchr(p,':') + 2;
+		p = strchr(p1,'"');
+		*p = 0;
+		memcpy(&bus_temp.time_arrival[0],p1,sizeof(bus_temp.time_arrival)-1);
+		*p = '"';
+		//
+		/* p1 = p + 1;
+		p = strstr(p1,"Benden"); //"Benden":"Bến chợ Hàn"
+		if (p==NULL) continue;
+		if (p > p_endline) {p = p_endline; continue;};
+		p1 = strchr(p,':') + 2;
+		p = strchr(p1,'"');
+		*p = 0;
+		memcpy(&bus_temp.station_to[0],p1,sizeof(bus_temp.station_to)-1);
+		debugSerial.println(bus_temp.station_to);
+		//
+		p1 = p + 1;
+		p = strstr(p1,"Bendi"); //"Bendi":"Bến Kim Liên"
+		if (p==NULL) continue;
+		if (p > p_endline) {p = p_endline; continue;};
+		p1 = strchr(p,':') + 2;
+		p = strchr(p1,'"');
+		*p = 0;
+		memcpy(&bus_temp.station_from[0],p1,sizeof(bus_temp.station_from)-1);
+		debugSerial.println(bus_temp.station_from); */
+		//
+		
+		p = p_endline;
+		//
+		bool exist = false;
+		int id = 0;
+		for (id=0;id<Bus_count;id++)
 		{
-			exist = true;
-			Bus[id].visible = true;
-			if(disp_index != Bus[id].display_index) {DEBUG_SERIAL("display_index changed\n");Bus[id].changed = true; break;}
-			if(strstr(bus_temp.car_no,Bus[id].car_no) == NULL) {DEBUG_SERIAL("car_no changed\n");Bus[id].changed = true; break;}
-			if(strstr(bus_temp.time_arrival,Bus[id].time_arrival) == NULL) {DEBUG_SERIAL("time_arrival changed\n");Bus[id].changed = true; break;}
-			break;
+			if(Compare2array(bus_temp.route_no,Bus[id].route_no))
+			{
+				exist = true;
+				Bus[id].visible = true;
+				if(disp_index != Bus[id].display_index) {DEBUG_SERIAL("display_index changed\n");Bus[id].changed = true; break;}
+				if(Compare2array(bus_temp.car_no,Bus[id].car_no) == false) {DEBUG_SERIAL("car_no changed\n");Bus[id].changed = true; break;}
+				if(Compare2array(bus_temp.time_arrival,Bus[id].time_arrival) == false) {DEBUG_SERIAL("time_arrival changed\n");Bus[id].changed = true; break;}
+				break;
+			}
 		}
-	}
-	if (!exist) 
-	{
-		id = Bus_count++;
-		Bus[id].changed = true;
-		Bus[id].visible = true;
-	}
-	if (Bus[id].changed)
-	{
-		Bus[id].display_index = disp_index;
-		memcpy(&Bus[id].route_no[0],bus_temp.route_no,sizeof(Bus[id].route_no)-1);
-		memcpy(&Bus[id].car_no[0],bus_temp.car_no,sizeof(Bus[id].car_no)-1);
-		memcpy(&Bus[id].time_arrival[0],bus_temp.time_arrival,sizeof(Bus[id].time_arrival)-1);
-	}
-	DEBUG_SERIAL("display_index=%d, route_no=%s, car_no=%s, time_arrival=%s, changed=%d, visible=%d\n",Bus[id].display_index,Bus[id].route_no,Bus[id].car_no,Bus[id].time_arrival,Bus[id].changed,Bus[id].visible);
-	
-	disp_index+=1;
-	if (Bus_count >= Bus_Max) break;
+		if (!exist) 
+		{
+			id = Bus_count++;
+			Bus[id].changed = true;
+			Bus[id].visible = true;
+		}
+		if (Bus[id].changed)
+		{
+			Bus[id].display_index = disp_index;
+			memcpy(&Bus[id].route_no[0],bus_temp.route_no,sizeof(Bus[id].route_no)-1);
+			memcpy(&Bus[id].car_no[0],bus_temp.car_no,sizeof(Bus[id].car_no)-1);
+			memcpy(&Bus[id].time_arrival[0],bus_temp.time_arrival,sizeof(Bus[id].time_arrival)-1);
+			memcpy(&Bus[id].passenger[0],bus_temp.passenger,sizeof(Bus[id].passenger)-1);
+		}
+		DEBUG_SERIAL("display_index=%d, route_no=%s, car_no=%s, time_arrival=%s, changed=%d, visible=%d\n",Bus[id].display_index,Bus[id].route_no,Bus[id].car_no,Bus[id].time_arrival,Bus[id].changed,Bus[id].visible);
+		
+		disp_index+=1;
+		if (Bus_count >= Bus_Max) break;
 	};
-	
-	
 }
-
+bool Compare2array(char* p1,char* p2)
+{
+	bool ret = true;
+	while (*p1 != NULL)
+	{
+		if (*p1 != *p2) {ret = false; break;}
+		p1++; p2++;
+	}
+	if (ret && *p2 != NULL) ret = false;
+	return ret;
+}

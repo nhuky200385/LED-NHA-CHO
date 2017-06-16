@@ -7,16 +7,18 @@
 
 #define Set_busStop "BusStop="
 #define StartUp "StartUp"
-#define BusInfo "BusInfo"
+#define Begin_BusInfo "BusInfo"
 #define End_BusInfo "End_Info"
-#define BusConfig "BusConfig"
+#define Begin_BusConfig "BusConfig"
 #define End_BusConfig "End_Config"
+#define Begin_BusRoute "BusRoute"
+#define End_BusRoute "End_Route"
 #define CheckRunning "Running?"
-#define Running "DISPLAY"
-#define Idle "Idle"
+#define Running "RUNNING"
+#define Idle "IDLE"
 #define Set_display "DISPLAY="
-#define Set_Time "SetTime="
-#define End_Time "End_Time"
+#define Begin_SetTime "Set_Time"
+#define End_SetTime "End_Time"
 #define Set_Brightness "Set_Brightness="
 #define End_Brightness "End_Brightness"
 #define CheckSum_Fail "CheckSum_Fail"
@@ -31,6 +33,7 @@
 #define isCheckRunning 3
 #define isSet_Time 4
 #define isSet_Brightness 5
+#define isBusRoute 6
 
 uint8_t State=1;
 uint8_t TMF_demo=0;
@@ -47,6 +50,7 @@ uint8_t businfo_index=0;
 const uint8_t frame_infor_index=5; //
 uint32_t last_update_infor_ts;
 const uint32_t update_info_timeout = 300000; //5M
+uint32_t last_ConfigTime;
 
 #include "Adafruit_GFX.h"
 #include "RGBmatrixPanel_7.h"
@@ -89,20 +93,14 @@ uint8_t auto_brightness;
 bool auto_adjust_brightness=true;
 bool bstartup;
 
-const char loi[]={"SỰ CỐ MẤT KẾT NỐI ĐẾN SERVER-XIN LỖI QUÝ KHÁCH VÌ SỰ BẤT TIỆN NÀY"};
+char disp_infor[1003];
+const char loi[]={"MẤT KẾT NỐI ĐẾN SERVER"};
 const char nobus[]={"HIỆN TẠI KHÔNG CÓ XE NÀO SẮP ĐẾN NHÀ CHỜ NÀY "};
-const char tmf_bdl[]={"TMF-BDL: ĐIỂM ĐẦU - BÙI DƯƠNG LỊCH - DƯƠNG VÂN NGA - KHÚC HẠO - HỒ HÁN THƯƠNG - CHU HUY MÂN - CẦU THUẬN PHƯỚC - ĐƯỜNG 3/2 - BÃI ĐỖ XE XUÂN DIỆU - ĐƯỜNG 3/2 - TRẦN PHÚ - LÝ TỰ TRỌNG - NGUYỄN THỊ MINH KHAI - LÊ DUẨN - NGÃ BA CAI LANG - LÝ THÁI TỔ - HÙNG VƯƠNG - CHI LĂNG - LÊ DUẨN - PHAN CHÂU TRINH - HÙNG VƯƠNG - BẠCH ĐẰNG - ĐƯỜNG 3/2 - BÃI ĐỖ XE XUÂN DIỆU - ĐƯỜNG 3/2 - CẦU THUẬN PHƯỚC - CHU HUY MÂN - HỒ HÁN THƯƠNG - KHÚC HẠO - DƯƠNG VÂN NGA - BÙI DƯƠNG LỊCH"};
-const char tmf_xd[]={"TMF-XD: BÃI ĐỖ XE XUÂN DIỆU - ĐƯỜNG 3/2 - TRẦN PHÚ - LÝ TỰ TRỌNG - NGUYỄN THỊ MINH KHAI - LÊ DUẨN - NGÃ BA CAI LANG - LÝ THÁI TỔ - HÙNG VƯƠNG - CHI LĂNG - LÊ DUẨN - PHAN CHÂU TRINH - HÙNG VƯƠNG - BẠCH ĐẰNG - ĐƯỜNG 3/2 - BÃI ĐỖ XE XUÂN DIỆU"};
-const char tuyen_7[]={"Tuyến 7: Chiều đi: Trạm xe buýt Xuân Diệu - Đường 3/2 - Đống Đa - Lê Lợi - Lý Tự Trọng - Trần Phú - Quang Trung - Lê Lợi - Phan Châu Trinh - Trưng Nữ Vương - Núi Thành - Tiểu La - Lê Thanh Nghị - CMT8 - Ông Ích Đường - Cầu Cầm Lệ - Phạm Hùng - Trạm xe buýt Phạm Hùng;    Chiều về: Trạm xe buýt Phạm Hùng - Phạm Hùng - Cầu Cẩm Lệ - Ông Ích Đường - CMT8 - Lê Thanh Nghị - Tiểu La - Núi Thành- Trưng Nữ Vương - Hoàng Diệu - Thái Phiên - Nguyễn Chí Thanh - Hùng Vương - Bạch Đằng - Đường 3/2 - Trạm xe buýt Xuân Diệu"};
-const char tuyen_2[]={"Tuyến 2: Chiều đi: 274 Nguyễn Văn Cừ (Hòa Hiệp Bắc) - Nguyễn Lương Bằng (KCN Hòa Khánh) - Tôn Đức Thắng (Bến xe Trung tâm) - Điện Biên Phủ -Nguyễn Đức Trung - Trần Cao Vân - Hà Khê - Nguyễn Tất Thành - Ông Ích Khiêm - Lê Duẩn - Chi Lăng- Hùng Vương - Trần Phú - Trần Quốc Toản - Bạch Đằng (Chợ Hàn);   Chiều về: Bạch Đằng (đối diện Chợ Hàn) - Hùng Vương - Chi Lăng - Lê Duẩn - Ông Ích Khiêm - Nguyễn Tất Thành - Hà Khê - Trần Cao Vân - Nguyễn Đức Trung - Điện Biên Phủ - Tôn Đức Thắng (Bến xe Trung tâm) - Nguyễn Lương Bằng (KCN Hòa Khánh) - 274 Nguyễn Văn Cừ (Hòa Hiệp Bắc)"};
-const char tuyen_9[]={"Tuyến 9: Chiều đi: Ngã 3 đường Nguyễn Phan Vinh - Hoàng Sa (điểm đầu tuyến) - Nguyễn Phan Vinh - Ngô Quyền - Cầu Rồng - Bạch Đằng - Lý Tự Trọng - Thanh Sơn - Ông Ích Khiêm - Nguyễn Tất Thành - Hà Khê - Hà Huy Tập - Trường Trinh - Quốc lộ 1A - Ngã Ba Hương An - Đường DT611 - Thị Trấn Đông Phú - Phan Chu Trinh - Bến xe Quế Sơn;   Chiều về: Bến xe Quế Sơn - Phan Chu Trinh - Đường ĐT 611 - Ngã Ba Hương An - Quốc lộ 1A - Trường Chinh - Hà Huy Tập - Hà Khê - Nguyễn Tất Thành - Ông Ích Khiêm - Thanh Sơn - Lý Tự Trọng - Nguyễn Thị Minh Khai - Hùng Vương - Trần Phú - Cầu Rồng - Ngô Quyền - Nguyễn Phan Vinh - Ngã 3 đường Nguyễn Phan Vinh - Hoàng Sa"};
 
 char bendi[] = {"Đ.đầu\0"};
 char benden[] = {"Đ.cuối\0"};
 
 void Frame_Config(bool refresh = true);
-
-char busStop_name[100];
 
 uint32_t Unixtime_GMT7;
 #define SECONDS_FROM_1970_TO_2000 946684800
@@ -129,9 +127,9 @@ header_struct Header[5];
 int Bus_count;
 bus_struct Bus[Bus_Max];
 //
-#define Infor_Max 10
-infor_struct Infor[Infor_Max];
-int infor_index=0;
+#define Route_Max 10
+Route_struct Route[Route_Max];
+int route_index=0;
 // typedef struct {
 	// int16_t x,y,w,h;
 	// uint8_t color,align;
@@ -164,7 +162,7 @@ frame_struct Frame[20];
 	{45,60,52,8,GREEN,LEFT,&Tahoma_8,NULL,&Bus[2].car_no[0],false,-4}, //12
 	{97,60,31,8,YELLOW,RIGHT,&Tahoma_8,NULL,&Bus[2].time_arrival[0],false,-4}, //13
 	//
-	{0,72,128,24,GREEN,LEFT,&Tahoma_12,&Tahoma_12VN,&Infor[infor_index].text[0],true,1}, //14
+	{0,72,128,24,GREEN,LEFT,&Tahoma_12,&Tahoma_12VN,&Infor[route_index].text[0],true,1}, //14
 	//{0,72,128,24,GREEN,LEFT,&Tahoma_12,&Tahoma_12VN,&tmf_bdl[0],true,0},
 	{0,0,0,0,RED,LEFT,NULL,NULL,NULL,false,0},
 	{0,0,0,0,RED,LEFT,NULL,NULL,NULL,false,0},
@@ -196,22 +194,15 @@ RGBmatrixPanel matrix(A, B, C, D, CLK, LAT, OE, false);
 
 void Init_bus()
 {	
-// header
-// char tieude[] = "TMF BUS";
-// char tuyen[] = "Tuyến";
-// char xe[] = "BS.Xe";
-// char time_arrival[] = "Giờ đến";
-// char time_[]="12:00"; 
-	memcpy(&busStop_name[0],"TMF BUS",sizeof(busStop_name)-1);
 	memcpy(&Header[0].text[0],"TMF BUS",sizeof(Header[0].text)-1);
 	memcpy(&Header[1].text[0],"00:00",sizeof(Header[0].text)-1);
 	memcpy(&Header[2].text[0],"Tuyến",sizeof(Header[0].text)-1);
-	memcpy(&Header[3].text[0],"BS.Xe",sizeof(Header[0].text)-1);
+	memcpy(&Header[3].text[0]," ",sizeof(Header[0].text)-1);
 	memcpy(&Header[4].text[0],"Giờđến",sizeof(Header[0].text)-1);
 	//
 	Bus_count = 0;
 	//
-	//Bus[Bus_count].infor_index = 0;
+	//Bus[Bus_count].route_index = 0;
 /* 	memcpy(&Bus[Bus_count].route_no[0],"TMF\0",sizeof(Bus[0].route_no)-1);
 	memcpy(&Bus[Bus_count].bus_name[0],"Nại Hiên Đông - Công Viên 29/3\0",sizeof(Bus[0].bus_name)-1);
 	memcpy(&Bus[Bus_count].station_from[0],"Nại Hiên Đông\0",sizeof(Bus[0].station_from)-1);
@@ -220,45 +211,27 @@ void Init_bus()
 	memcpy(&Bus[Bus_count].time_arrival[0],"10:20\0",sizeof(Bus[0].time_arrival)-1);
 	Bus_count+=1; */
 	/* //
-	Bus[Bus_count].infor_index = 1;
+	Bus[Bus_count].route_index = 1;
 	memcpy(&Bus[Bus_count].route_no[0],"TMF-XD",sizeof(Bus[0].route_no)-1);
 	memcpy(&Bus[Bus_count].car_no[0],"43H56789",sizeof(Bus[0].car_no)-1);
 	memcpy(&Bus[Bus_count].time_arrival[0],"10:30",sizeof(Bus[0].time_arrival)-1);
 	Bus[Bus_count].state = change_route_no;
 	Bus_count+=1;
 	//
-	Bus[Bus_count].infor_index = 0;
+	Bus[Bus_count].route_index = 0;
 	memcpy(&Bus[Bus_count].route_no[0],"08",sizeof(Bus[0].route_no)-1);
 	memcpy(&Bus[Bus_count].car_no[0],"43H50009",sizeof(Bus[0].car_no)-1);
 	memcpy(&Bus[Bus_count].time_arrival[0],"23:34",sizeof(Bus[0].time_arrival)-1);
 	Bus[Bus_count].state = change_route_no;
 	Bus_count+=1;
 	//
-	Bus[Bus_count].infor_index = 1;
+	Bus[Bus_count].route_index = 1;
 	memcpy(&Bus[Bus_count].route_no[0],"12",sizeof(Bus[0].route_no)-1);
 	memcpy(&Bus[Bus_count].car_no[0],"43H00087",sizeof(Bus[0].car_no)-1);
 	memcpy(&Bus[Bus_count].time_arrival[0],"09:56",sizeof(Bus[0].time_arrival)-1);
 	Bus[Bus_count].state = change_route_no;
 	Bus_count+=1; */
 	//
-	int id =0;
-	int infor_len = sizeof(Infor[infor_index].text)-3; //tieng viet co the chiem den 3 bytes
-	memcpy(&Infor[id++].route_no[0]," ",sizeof(Infor[infor_index].route_no)-1);
-	memcpy(&Infor[id++].route_no[0]," ",sizeof(Infor[infor_index].route_no)-1);
-	memcpy(&Infor[id++].route_no[0],"TMF",sizeof(Infor[infor_index].route_no)-1);
-	memcpy(&Infor[id++].route_no[0],"7",sizeof(Infor[infor_index].route_no)-1);
-	memcpy(&Infor[id++].route_no[0],"2",sizeof(Infor[infor_index].route_no)-1);
-	memcpy(&Infor[id++].route_no[0],"9",sizeof(Infor[infor_index].route_no)-1);
-	//
-	id =0;
-	memcpy(&Infor[id++].text[0],&loi[0],infor_len);
-	memcpy(&Infor[id++].text[0],&nobus[0],infor_len);
-	memcpy(&Infor[id++].text[0],&tmf_bdl[0],infor_len);
-	memcpy(&Infor[id++].text[0],&tuyen_7[0],infor_len);
-	memcpy(&Infor[id++].text[0],&tuyen_2[0],infor_len);
-	memcpy(&Infor[id++].text[0],&tuyen_9[0],infor_len);
-	
-	for (int i=0;i<Infor_Max;i++) Infor[i].text[infor_len] =0;
 }
 void Process_Serialbuffer(Stream& inStream)
 {
@@ -324,199 +297,43 @@ if (debugSerial.available())
   while (debugSerial.available()) debugSerial.read(); //clear serial serial_buffer
 }
 }
+enum
+{
+	f0,f1,f2,f3,f4,
+	row1_c1,row1_c2,row1_c3,
+	row2_c1,row2_c2,row2_c3,
+	row3_c1,row3_c2,row3_c3,
+	f14,f15
+};
 void Frame_Config(bool refresh)
 {
 	int id = 0;
-	switch(Frame_Stype)
-	{
-		case 0:
-			Frame[id++] = {1,0,93,14,YELLOW,LEFT,&Tahoma_12B,NULL,&Header[0].text[0],false,-4}; //0
-			Frame[id++] = {91,0,37,14,YELLOW,LEFT,&TahomaNumber_10B,NULL,&Header[1].text[0],false,-1}; //1
+	
+			Frame[f0] = {1,0,88,14,YELLOW,LEFT,&Tahoma_12B,&Tahoma_12BVN,&Header[0].text[0],false,-4,0,true}; //0
+			Frame[f1] = {91,0,37,14,YELLOW,LEFT,&TahomaNumber_10B,NULL,&Header[1].text[0],false,-1}; //1
 			//
-			Frame[id++] = {1,16,44,15,RED,LEFT,&Tahoma_8,&Tahoma_8VN,&Header[2].text[0],false,0}; //2
-			Frame[id++] = {45,15,44,15,GREEN,LEFT,&Tahoma_8,&Tahoma_8VN,&Header[3].text[0],false,0}; //3
-			Frame[id++] = {88,15,40,15,YELLOW,RIGHT,&Tahoma_8,&Tahoma_8VN,&Header[4].text[0],false,0}; //4
+			Frame[f2] = {0,16,42,15,RED,LEFT,&Tahoma_8B,&Tahoma_8BVN,&Header[2].text[0],false,0}; //2
+			Frame[f3] = {42,16,46,15,GREEN,CENTER,&Tahoma_8B,&Tahoma_8BVN,&Header[3].text[0],false,0}; //3
+			Frame[f4] = {87,16,42,15,YELLOW,RIGHT,&Tahoma_8B,&Tahoma_8BVN,&Header[4].text[0],false,0}; //4
 			//
-			Frame[id++] = {1,31,22,15,RED,CENTER,&Tahoma_8,&Tahoma_8VN,&Bus[0].route_no[0],false,-1}; //5
-			Frame[id++] = {23,31,74,15,GREEN,CENTER,&Tahoma_8,&Tahoma_8VN,&Bus[0].car_no[0],false,-1,display_car_no}; //6
-			Frame[id++] = {97,31,31,15,YELLOW,RIGHT,&Tahoma_8,NULL,&Bus[0].time_arrival[0],false,-1}; //7
+			Frame[row1_c1] = {1,31,22,15,RED,CENTER,&Tahoma_8B,&Tahoma_8BVN,&Bus[0].route_no[0],false,-1}; //5
+			Frame[row1_c2] = {23,31,73,15,GREEN,LEFT,&Tahoma_8,&Tahoma_8VN,&Bus[0].bus_name[0],true,-1,0,true,true}; //6
+			Frame[row1_c3] = {96,31,32,15,YELLOW,RIGHT,&Tahoma_8B,NULL,&Bus[0].time_arrival[0],false,-1}; //7
 			//
-			Frame[id++] = {1,46,22,15,RED,CENTER,&Tahoma_8,&Tahoma_8VN,&Bus[1].route_no[0],false,-1}; //8
-			Frame[id++] = {23,46,74,15,GREEN,LEFT,&Tahoma_8,&Tahoma_8VN,&Bus[1].car_no[0],false,-1,display_car_no}; //9
-			Frame[id++] = {97,46,31,15,YELLOW,RIGHT,&Tahoma_8,NULL,&Bus[1].time_arrival[0],false,-1}; //10
+			Frame[row2_c1] = {1,46,22,15,RED,CENTER,&Tahoma_8B,&Tahoma_8BVN,&Bus[1].route_no[0],false,-1}; //8
+			Frame[row2_c2] = {23,46,73,15,GREEN,LEFT,&Tahoma_8,&Tahoma_8VN,&Bus[1].bus_name[0],true,-1,0,true,true}; //9
+			Frame[row2_c3] = {96,46,32,15,YELLOW,RIGHT,&Tahoma_8B,NULL,&Bus[1].time_arrival[0],false,-1}; //10
 			//
-			Frame[id++] = {1,61,22,15,RED,CENTER,&Tahoma_8,&Tahoma_8VN,&Bus[2].route_no[0],false,-1}; //11
-			Frame[id++] = {23,61,74,15,GREEN,LEFT,&Tahoma_8,&Tahoma_8VN,&Bus[2].car_no[0],false,-1,display_car_no}; //12
-			Frame[id++] = {97,61,31,15,YELLOW,RIGHT,&Tahoma_8,NULL,&Bus[2].time_arrival[0],false,-1}; //13
+			Frame[row3_c1] = {1,61,22,15,RED,CENTER,&Tahoma_8B,&Tahoma_8BVN,&Bus[2].route_no[0],false,-1}; //11
+			Frame[row3_c2] = {23,61,73,15,GREEN,LEFT,&Tahoma_8,&Tahoma_8VN,&Bus[2].bus_name[0],true,-1,0,true,true}; //12
+			Frame[row3_c3] = {96,61,32,15,YELLOW,RIGHT,&Tahoma_8B,NULL,&Bus[2].time_arrival[0],false,-1}; //13
 			//
-			if (refresh) Frame[id++] = {0,76,128,24,GREEN,LEFT,&Tahoma_12,&Tahoma_12VN,&Infor[infor_index].text[0],true,0}; //14
-		break;
-		case 1:
-			Frame[id++] = {1,0,93,14,YELLOW,LEFT,&Tahoma_12B,NULL,&Header[0].text[0],false,-4}; //0
-			Frame[id++] = {91,0,37,14,YELLOW,LEFT,&TahomaNumber_10B,NULL,&Header[1].text[0],false,-1}; //1
-			//
-			Frame[id++] = {1,16,44,15,RED,LEFT,&Tahoma_8,&Tahoma_8VN,&Header[2].text[0],false,0}; //2
-			Frame[id++] = {45,15,44,15,GREEN,LEFT,&Tahoma_8,&Tahoma_8VN,NULL,false,0}; //3
-			Frame[id++] = {88,15,40,15,YELLOW,RIGHT,&Tahoma_8,&Tahoma_8VN,&Header[4].text[0],false,0}; //4
-			//
-			Frame[id++] = {1,31,22,15,RED,CENTER,&Tahoma_8,&Tahoma_8VN,&Bus[0].route_no[0],false,-1}; //5
-			Frame[id++] = {23,31,74,15,GREEN,LEFT,&Tahoma_8,&Tahoma_8VN,&Bus[0].bus_name[0],true,-1,display_bus_name}; //6
-			Frame[id++] = {97,31,31,15,YELLOW,RIGHT,&Tahoma_8,NULL,&Bus[0].time_arrival[0],false,-1}; //7
-			//
-			Frame[id++] = {1,46,22,15,RED,CENTER,&Tahoma_8,&Tahoma_8VN,&Bus[1].route_no[0],false,-1}; //8
-			Frame[id++] = {23,46,74,15,GREEN,LEFT,&Tahoma_8,&Tahoma_8VN,&Bus[1].bus_name[0],true,-1,display_bus_name}; //9
-			Frame[id++] = {97,46,31,15,YELLOW,RIGHT,&Tahoma_8,NULL,&Bus[1].time_arrival[0],false,-1}; //10
-			//
-			Frame[id++] = {1,61,22,15,RED,CENTER,&Tahoma_8,&Tahoma_8VN,&Bus[2].route_no[0],false,-1}; //11
-			Frame[id++] = {23,61,74,15,GREEN,LEFT,&Tahoma_8,&Tahoma_8VN,&Bus[2].bus_name[0],true,-1,display_bus_name}; //12
-			Frame[id++] = {97,61,31,15,YELLOW,RIGHT,&Tahoma_8,NULL,&Bus[2].time_arrival[0],false,-1}; //13
-			//
-			if (refresh) Frame[id++] = {0,76,128,24,GREEN,LEFT,&Tahoma_12,&Tahoma_12VN,&Infor[infor_index].text[0],true,0}; //14
-		break;
-		case 2:
-			Frame[id++] = {1,0,93,14,YELLOW,LEFT,&Tahoma_12B,NULL,&Header[0].text[0],false,-4}; //0
-			Frame[id++] = {91,0,37,14,YELLOW,LEFT,&TahomaNumber_10B,NULL,&Header[1].text[0],false,-1}; //1
-			//
-			Frame[id++] = {1,16,44,15,RED,LEFT,&Tahoma_8,&Tahoma_8VN,&Header[2].text[0],false,0}; //2
-			Frame[id++] = {45,15,44,15,GREEN,LEFT,&Tahoma_8,&Tahoma_8VN,NULL,false,0}; //3
-			Frame[id++] = {88,15,40,15,YELLOW,RIGHT,&Tahoma_8,&Tahoma_8VN,&Header[4].text[0],false,0}; //4
-			//
-			Frame[id++] = {1,31,22,15,RED,CENTER,&Tahoma_8,&Tahoma_8VN,&Bus[0].route_no[0],false,-1}; //5
-			Frame[id++] = {23,31,74,15,GREEN,LEFT,&Tahoma_8,&Tahoma_8VN,&Bus[0].bus_name[0],false,-1,display_bus_name}; //6
-			Frame[id++] = {97,31,31,15,YELLOW,RIGHT,&Tahoma_8,NULL,&Bus[0].time_arrival[0],false,-1}; //7
-			//
-			Frame[id++] = {1,46,22,15,RED,CENTER,&Tahoma_8,&Tahoma_8VN,&Bus[1].route_no[0],false,-1}; //8
-			Frame[id++] = {23,46,74,15,GREEN,LEFT,&Tahoma_8,&Tahoma_8VN,&Bus[1].bus_name[0],false,-1,display_bus_name}; //9
-			Frame[id++] = {97,46,31,15,YELLOW,RIGHT,&Tahoma_8,NULL,&Bus[1].time_arrival[0],false,-1}; //10
-			//
-			Frame[id++] = {1,61,22,15,RED,CENTER,&Tahoma_8,&Tahoma_8VN,&Bus[2].route_no[0],false,-1}; //11
-			Frame[id++] = {23,61,74,15,GREEN,LEFT,&Tahoma_8,&Tahoma_8VN,&Bus[2].bus_name[0],false,-1,display_bus_name}; //12
-			Frame[id++] = {97,61,31,15,YELLOW,RIGHT,&Tahoma_8,NULL,&Bus[2].time_arrival[0],false,-1}; //13
-			//
-			if (refresh) Frame[id++] = {0,76,128,24,GREEN,LEFT,&Tahoma_12,&Tahoma_12VN,&Infor[infor_index].text[0],true,0}; //14
-		break;
-		case 31:
-			Frame[id++] = {1,0,93,14,YELLOW,LEFT,&Tahoma_12B,NULL,&Header[0].text[0],false,-4}; //0
-			Frame[id++] = {91,0,37,14,YELLOW,LEFT,&TahomaNumber_10B,NULL,&Header[1].text[0],false,-1}; //1
-			//
-			Frame[id++] = {1,16,44,15,RED,LEFT,&Tahoma_8,&Tahoma_8VN,&Header[2].text[0],false,0}; //2
-			Frame[id++] = {45,15,44,15,GREEN,LEFT,&Tahoma_8,&Tahoma_8VN,NULL,false,0}; //3
-			Frame[id++] = {88,15,40,15,YELLOW,RIGHT,&Tahoma_8,&Tahoma_8VN,&Header[4].text[0],false,0}; //4
-			//
-			Frame[id++] = {1,31,22,15,RED,CENTER,&Tahoma_8,&Tahoma_8VN,&Bus[0].route_no[0],false,-1}; //5
-			Frame[id++] = {23,31,74,15,GREEN,LEFT,&Tahoma_8,&Tahoma_8VN,&Bus[0].bus_name[0],true,-1,display_bus_name}; //6
-			Frame[id++] = {97,31,31,15,YELLOW,RIGHT,&Tahoma_8,NULL,&Bus[0].time_arrival[0],false,-1}; //7
-			//
-			Frame[id++] = {1,46,22,15,RED,CENTER,&Tahoma_8,&Tahoma_8VN,&Bus[1].route_no[0],false,-1}; //8
-			Frame[id++] = {23,46,74,15,GREEN,LEFT,&Tahoma_8,&Tahoma_8VN,&Bus[1].bus_name[0],false,-1,display_bus_name}; //9
-			Frame[id++] = {97,46,31,15,YELLOW,RIGHT,&Tahoma_8,NULL,&Bus[1].time_arrival[0],false,-1}; //10
-			//
-			Frame[id++] = {1,61,22,15,RED,CENTER,&Tahoma_8,&Tahoma_8VN,&Bus[2].route_no[0],false,-1}; //11
-			Frame[id++] = {23,61,74,15,GREEN,LEFT,&Tahoma_8,&Tahoma_8VN,&Bus[2].bus_name[0],false,-1,display_bus_name}; //12
-			Frame[id++] = {97,61,31,15,YELLOW,RIGHT,&Tahoma_8,NULL,&Bus[2].time_arrival[0],false,-1}; //13
-			//
-			if (refresh) Frame[id++] = {0,76,128,24,GREEN,LEFT,&Tahoma_12,&Tahoma_12VN,&Infor[infor_index].text[0],true,0}; //14
-		break;
-		case 32: //tuong tu 3 nhung chay chu o dong so 2
-			Frame[id++] = {1,0,93,14,YELLOW,LEFT,&Tahoma_12B,NULL,&Header[0].text[0],false,-4}; //0
-			Frame[id++] = {91,0,37,14,YELLOW,LEFT,&TahomaNumber_10B,NULL,&Header[1].text[0],false,-1}; //1
-			//
-			Frame[id++] = {1,16,44,15,RED,LEFT,&Tahoma_8,&Tahoma_8VN,&Header[2].text[0],false,0}; //2
-			Frame[id++] = {45,15,44,15,GREEN,LEFT,&Tahoma_8,&Tahoma_8VN,NULL,false,0}; //3
-			Frame[id++] = {88,15,40,15,YELLOW,RIGHT,&Tahoma_8,&Tahoma_8VN,&Header[4].text[0],false,0}; //4
-			//
-			Frame[id++] = {1,31,22,15,RED,CENTER,&Tahoma_8,&Tahoma_8VN,&Bus[0].route_no[0],false,-1}; //5
-			Frame[id++] = {23,31,74,15,GREEN,LEFT,&Tahoma_8,&Tahoma_8VN,&Bus[0].bus_name[0],false,-1,display_bus_name}; //6
-			Frame[id++] = {97,31,31,15,YELLOW,RIGHT,&Tahoma_8,NULL,&Bus[0].time_arrival[0],false,-1}; //7
-			//
-			Frame[id++] = {1,46,22,15,RED,CENTER,&Tahoma_8,&Tahoma_8VN,&Bus[1].route_no[0],false,-1}; //8
-			Frame[id++] = {23,46,74,15,GREEN,LEFT,&Tahoma_8,&Tahoma_8VN,&Bus[1].bus_name[0],true,-1,display_bus_name}; //9
-			Frame[id++] = {97,46,31,15,YELLOW,RIGHT,&Tahoma_8,NULL,&Bus[1].time_arrival[0],false,-1}; //10
-			//
-			Frame[id++] = {1,61,22,15,RED,CENTER,&Tahoma_8,&Tahoma_8VN,&Bus[2].route_no[0],false,-1}; //11
-			Frame[id++] = {23,61,74,15,GREEN,LEFT,&Tahoma_8,&Tahoma_8VN,&Bus[2].bus_name[0],false,-1,display_bus_name}; //12
-			Frame[id++] = {97,61,31,15,YELLOW,RIGHT,&Tahoma_8,NULL,&Bus[2].time_arrival[0],false,-1}; //13
-			//
-			if (refresh) Frame[id++] = {0,76,128,24,GREEN,LEFT,&Tahoma_12,&Tahoma_12VN,&Infor[infor_index].text[0],true,0}; //14
-		break;
-		case 33: //tuong tu 3 nhung chay chu o dong so 2
-			Frame[id++] = {1,0,93,14,YELLOW,LEFT,&Tahoma_12B,NULL,&Header[0].text[0],false,-4}; //0
-			Frame[id++] = {91,0,37,14,YELLOW,LEFT,&TahomaNumber_10B,NULL,&Header[1].text[0],false,-1}; //1
-			//
-			Frame[id++] = {1,16,44,15,RED,LEFT,&Tahoma_8,&Tahoma_8VN,&Header[2].text[0],false,0}; //2
-			Frame[id++] = {45,15,44,15,GREEN,LEFT,&Tahoma_8,&Tahoma_8VN,NULL,false,0}; //3
-			Frame[id++] = {88,15,40,15,YELLOW,RIGHT,&Tahoma_8,&Tahoma_8VN,&Header[4].text[0],false,0}; //4
-			//
-			Frame[id++] = {1,31,22,15,RED,CENTER,&Tahoma_8,&Tahoma_8VN,&Bus[0].route_no[0],false,-1}; //5
-			Frame[id++] = {23,31,74,15,GREEN,LEFT,&Tahoma_8,&Tahoma_8VN,&Bus[0].bus_name[0],false,-1,display_bus_name}; //6
-			Frame[id++] = {97,31,31,15,YELLOW,RIGHT,&Tahoma_8,NULL,&Bus[0].time_arrival[0],false,-1}; //7
-			//
-			Frame[id++] = {1,46,22,15,RED,CENTER,&Tahoma_8,&Tahoma_8VN,&Bus[1].route_no[0],false,-1}; //8
-			Frame[id++] = {23,46,74,15,GREEN,LEFT,&Tahoma_8,&Tahoma_8VN,&Bus[1].bus_name[0],false,-1,display_bus_name}; //9
-			Frame[id++] = {97,46,31,15,YELLOW,RIGHT,&Tahoma_8,NULL,&Bus[1].time_arrival[0],false,-1}; //10
-			//
-			Frame[id++] = {1,61,22,15,RED,CENTER,&Tahoma_8,&Tahoma_8VN,&Bus[2].route_no[0],false,-1}; //11
-			Frame[id++] = {23,61,74,15,GREEN,LEFT,&Tahoma_8,&Tahoma_8VN,&Bus[2].bus_name[0],true,-1,display_bus_name}; //12
-			Frame[id++] = {97,61,31,15,YELLOW,RIGHT,&Tahoma_8,NULL,&Bus[2].time_arrival[0],false,-1}; //13
-			//
-			if (refresh) Frame[id++] = {0,76,128,24,GREEN,LEFT,&Tahoma_12,&Tahoma_12VN,&Infor[infor_index].text[0],true,0}; //14
-		break;
-		case 4:
-			Frame[id++] = {1,0,90,14,YELLOW,LEFT,&Tahoma_12B,&Tahoma_12BVN,&busStop_name[0],false,-4,0,true}; //0
-			Frame[id++] = {91,0,37,14,YELLOW,LEFT,&TahomaNumber_10B,NULL,&Header[1].text[0],false,-1}; //1
-			//
-			Frame[id++] = {0,16,42,15,RED,LEFT,&Tahoma_8B,&Tahoma_8BVN,&Header[2].text[0],false,0}; //2
-			Frame[id++] = {42,16,46,15,GREEN,CENTER,&Tahoma_8B,&Tahoma_8BVN,&bendi[0],false,0}; //3
-			Frame[id++] = {87,16,42,15,YELLOW,RIGHT,&Tahoma_8B,&Tahoma_8BVN,&Header[4].text[0],false,0}; //4
-			//
-			Frame[id++] = {1,31,22,15,RED,CENTER,&Tahoma_8B,&Tahoma_8BVN,&Bus[0].route_no[0],false,-1}; //5
-			Frame[id++] = {23,31,74,15,GREEN,CENTER,&Tahoma_8B,&Tahoma_8BVN,&Bus[0].station_from[0],false,-1,display_station}; //6
-			Frame[id++] = {97,31,31,15,YELLOW,RIGHT,&Tahoma_8B,NULL,&Bus[0].time_arrival[0],false,-1}; //7
-			//
-			Frame[id++] = {1,46,22,15,RED,CENTER,&Tahoma_8B,&Tahoma_8BVN,&Bus[1].route_no[0],false,-1}; //8
-			Frame[id++] = {23,46,74,15,GREEN,CENTER,&Tahoma_8B,&Tahoma_8BVN,&Bus[1].station_from[0],false,-1,display_station}; //9
-			Frame[id++] = {97,46,31,15,YELLOW,RIGHT,&Tahoma_8B,NULL,&Bus[1].time_arrival[0],false,-1}; //10
-			//
-			Frame[id++] = {1,61,22,15,RED,CENTER,&Tahoma_8B,&Tahoma_8BVN,&Bus[2].route_no[0],false,-1}; //11
-			Frame[id++] = {23,61,74,15,GREEN,CENTER,&Tahoma_8B,&Tahoma_8BVN,&Bus[2].station_from[0],false,-1,display_station}; //12
-			Frame[id++] = {97,61,31,15,YELLOW,RIGHT,&Tahoma_8B,NULL,&Bus[2].time_arrival[0],false,-1}; //13
-			//
-			if (refresh) Frame[id++] = {22,76,106,24,GREEN,LEFT,&Tahoma_12,&Tahoma_12VN,&Infor[infor_index].text[0],true,0,0,true}; //14
+			if (refresh) Frame[f14] = {22,76,106,24,GREEN,LEFT,&Tahoma_12,&Tahoma_12VN,&Route[route_index].infor[0],true,0,0,true}; //14
 			else id++;
-			Frame[id++] = {0,76,22,24,RED,CENTER,&Tahoma_12B,&Tahoma_12BVN,&Bus[0].route_no[0],false,-1,0,false}; //15
+			Frame[f15] = {0,76,22,24,RED,CENTER,&Tahoma_12B,&Tahoma_12BVN,&Bus[0].route_no[0],false,-1,0,false}; //15
 			
 			station_ts = millis();
 			swap_station = false;
-		break;
-		case 5:
-			Frame[id++] = {1,0,88,14,YELLOW,LEFT,&Tahoma_12B,&Tahoma_12BVN,&busStop_name[0],false,-4,0,true}; //0
-			//Frame[id++] = {1,0,88,14,YELLOW,LEFT,&Tahoma_12,&Tahoma_12VN,&busStop_name[0],true,-3,0,true,true}; //0
-			Frame[id++] = {91,0,37,14,YELLOW,LEFT,&TahomaNumber_10B,NULL,&Header[1].text[0],false,-1}; //1
-			//
-			Frame[id++] = {0,16,42,15,RED,LEFT,&Tahoma_8B,&Tahoma_8BVN,&Header[2].text[0],false,0}; //2
-			Frame[id++] = {42,16,46,15,GREEN,CENTER,&Tahoma_8B,&Tahoma_8BVN,NULL,false,0}; //3
-			Frame[id++] = {87,16,42,15,YELLOW,RIGHT,&Tahoma_8B,&Tahoma_8BVN,&Header[4].text[0],false,0}; //4
-			//
-			Frame[id++] = {1,31,22,15,RED,CENTER,&Tahoma_8B,&Tahoma_8BVN,&Bus[0].route_no[0],false,-1}; //5
-			Frame[id++] = {23,31,73,15,GREEN,LEFT,&Tahoma_8,&Tahoma_8VN,&Bus[0].bus_name[0],true,-1,0,true,true}; //6
-			Frame[id++] = {96,31,32,15,YELLOW,RIGHT,&Tahoma_8B,NULL,&Bus[0].time_arrival[0],false,-1}; //7
-			//
-			Frame[id++] = {1,46,22,15,RED,CENTER,&Tahoma_8B,&Tahoma_8BVN,&Bus[1].route_no[0],false,-1}; //8
-			Frame[id++] = {23,46,73,15,GREEN,LEFT,&Tahoma_8,&Tahoma_8VN,&Bus[1].bus_name[0],true,-1,0,true,true}; //9
-			Frame[id++] = {96,46,32,15,YELLOW,RIGHT,&Tahoma_8B,NULL,&Bus[1].time_arrival[0],false,-1}; //10
-			//
-			Frame[id++] = {1,61,22,15,RED,CENTER,&Tahoma_8B,&Tahoma_8BVN,&Bus[2].route_no[0],false,-1}; //11
-			Frame[id++] = {23,61,73,15,GREEN,LEFT,&Tahoma_8,&Tahoma_8VN,&Bus[2].bus_name[0],true,-1,0,true,true}; //12
-			Frame[id++] = {96,61,32,15,YELLOW,RIGHT,&Tahoma_8B,NULL,&Bus[2].time_arrival[0],false,-1}; //13
-			//
-			if (refresh) Frame[id++] = {22,76,106,24,GREEN,LEFT,&Tahoma_12,&Tahoma_12VN,&Infor[infor_index].text[0],true,0,0,true}; //14
-			else id++;
-			Frame[id++] = {0,76,22,24,RED,CENTER,&Tahoma_12B,&Tahoma_12BVN,&Bus[0].route_no[0],false,-1,0,false}; //15
-			
-			station_ts = millis();
-			swap_station = false;
-		break;
-	}
 	//if (refresh == false)  return;
 	int16_t scroll_max=0;
 	for (int i=0;i<Frame_Max;i++)
@@ -566,8 +383,6 @@ void setup() {
 	Init_bus();
 	Frame_Config();	
 	
-	debugSerial.print("tmf_bdl=");
-	debugSerial.println(sizeof(tmf_bdl));
 	delay(500);
 	check_mem_free();
 	
@@ -663,10 +478,7 @@ void Scroll_process()
 			for (int i=0;i<3;i++)
 			{
 				Frame[index].text = &Bus[businfo_index + i].route_no[0]; matrix.print_Rect(&Frame[index++]);
-				if (Frame[index].display_code == display_car_no) Frame[index].text = &Bus[businfo_index + i].car_no[0];
-				else if (Frame[index].display_code == display_bus_name) Frame[index].text = &Bus[businfo_index + i].bus_name[0];
-				else Frame[index].text = &Bus[businfo_index + i].station_from[0]; 
-				matrix.print_Rect(&Frame[index++]);
+				Frame[index].text = &Bus[businfo_index + i].bus_name[0]; matrix.print_Rect(&Frame[index++]);
 				Frame[index].text = &Bus[businfo_index + i].time_arrival[0]; matrix.print_Rect(&Frame[index++]);
 			}
 			Frame[3].text = &bendi[0];
@@ -674,7 +486,7 @@ void Scroll_process()
 			station_ts = ml;
 			swap_station=false;
 		}
-		if (Frame_Stype>30)
+		/* if (Frame_Stype>30)
 		{
 			int stype_max = Bus_count-businfo_index + 30;
 			int new_stype = Frame_Stype+1;
@@ -685,10 +497,10 @@ void Scroll_process()
 				Frame_Config(false);
 				debugSerial.print("Frame_Stype="); debugSerial.println(Frame_Stype);
 			}
-		}
+		} */
 	}
 
-	if (ml - station_ts >= 5000)
+	/* if (ml - station_ts >= 5000)
 	{
 		station_ts = ml;
 		if (Frame_Stype==4){
@@ -712,7 +524,7 @@ void Scroll_process()
 		matrix.print_Rect(&Frame[12]);
 		matrix.print_Rect(&Frame[3]);
 		}
-	}
+	} */
 	if (ml - flash_ts >= 500)
 	{
 		b = true;
@@ -721,14 +533,6 @@ void Scroll_process()
 		if (flash) Header[1].text[2] = ' ';
 		else Header[1].text[2] = ':';
 		flash = !flash;
-		//debugSerial.println(minute*60+sec);
-		// if (flash) 
-		// {
-			// if (++sec>=60) {
-			// sec=0;
-			// if (++minute>=60) {hour++; minute=0;}
-			// }
-		// }
 		Header[1].text[0] = rtc.hour/10 + 0x30;
 		Header[1].text[1] = rtc.hour%10 + 0x30;
 		Header[1].text[3] = rtc.minute/10 + 0x30;
@@ -766,39 +570,53 @@ void CheckComm()
 	Comm_Infor = isBusIdle;
 	comm_count = 0;	
 	uint32_t timeout = 1000;
+	CommSerial.setTimeout(200);
 	if(CommAvailable()) {
 		uint32_t t = millis();
 		do {
 			if(CommAvailable()){
-				char c=CommSerial.read();
+				/* char c=CommSerial.read();
 				t = millis();
 				if (comm_count >= sizeof(comm_buffer) - 1) {
 					// buffer full, discard first half
 					comm_count = sizeof(comm_buffer) / 2 - 1;
 					memcpy(comm_buffer, comm_buffer + sizeof(comm_buffer) / 2, comm_count);
 				  }
-				comm_buffer[comm_count++] = c;
+				comm_buffer[comm_count++] = c; */
 				//if (c == '\n') break;
-				comm_buffer[comm_count] = 0;
-				
+				int size = CommSerial.available();
+				if (size>0)
+				{
+					CommSerial.readBytes(&comm_buffer[comm_count],size);
+					comm_count += size;
+					comm_buffer[comm_count] = 0;
+				}
 				if (strstr(comm_buffer, CheckRunning)) {
 					Comm_Infor = isCheckRunning;
 					break;
 				}
-				else if (strstr(comm_buffer, BusInfo)) {
-					debugSerial.print("<-"); debugSerial.println(BusInfo);
+				else if (strstr(comm_buffer, Begin_BusInfo)) {
+					debugSerial.print("<-"); debugSerial.println(Begin_BusInfo);
 					Comm_Infor = isBusInfo;
-					CommSerial.println(BusInfo);
+					CommSerial.println(Begin_BusInfo);
 					break;
 				}
-				else if (strstr(comm_buffer, BusConfig)) {
-					debugSerial.print("<-"); debugSerial.println(BusConfig);
+				else if (strstr(comm_buffer, Begin_BusConfig)) {
+					debugSerial.print("<-"); debugSerial.println(Begin_BusConfig);
 					Comm_Infor = isBusConfig;
+					CommSerial.println(Begin_BusConfig);
 					break;
 				}
-				else if (strstr(comm_buffer, Set_Time)) {
-					debugSerial.print("<-"); debugSerial.println(Set_Time);
+				else if (strstr(comm_buffer, Begin_BusRoute)) {
+					debugSerial.print("<-"); debugSerial.println(Begin_BusRoute);
+					Comm_Infor = isBusRoute;
+					CommSerial.println(Begin_BusRoute);
+					break;
+				}
+				else if (strstr(comm_buffer, Begin_SetTime)) {
+					debugSerial.print("<-"); debugSerial.println(Begin_SetTime);
 					Comm_Infor = isSet_Time;
+					CommSerial.println(Begin_SetTime);
 					break;
 				}
 				/* else if (strstr(comm_buffer, Set_Brightness)) {
@@ -822,9 +640,22 @@ void CheckComm()
 		}
 		debugSerial.print("->"); debugSerial.println(State==1 ? Running : Idle);
 	}
-	else if (Comm_Infor == isBusInfo) Get_BusInfor();
-	else if (Comm_Infor == isBusConfig) Get_BusConfig();
-	else if (Comm_Infor == isSet_Time) Get_DateTime();
+	else if (Comm_Infor == isBusInfo) 
+	{
+		if (Get_datafromServer(Begin_BusInfo,End_BusInfo)) Get_BusInfor_from_buffer();
+	}
+	else if (Comm_Infor == isBusConfig) 
+	{
+		if (Get_datafromServer(Begin_BusConfig,End_BusConfig)) Get_BusConfig_from_buffer();
+	}
+	else if (Comm_Infor == isBusRoute)
+	{
+		if (Get_datafromServer(Begin_BusRoute,End_BusRoute)) Get_Route_from_buffer();
+	}
+	else if (Comm_Infor == isSet_Time) 
+	{
+		if (Get_datafromServer(Begin_SetTime,End_SetTime)) Get_DateTime_from_buffer();
+	}
 	else if (Comm_Infor == isSet_Brightness) Get_Brightness();
 	else
 	{
@@ -833,33 +664,30 @@ void CheckComm()
 		Process_Serialbuffer(CommSerial);
 	}
 }
-void Get_BusInfor()
+bool Get_datafromServer(const char* begin,const char* end_data)
 {
-	if (Comm_Infor != isBusInfo) return;
+	bool bok=false;
+	if (Comm_Infor == isBusIdle) return bok;
 	Comm_Infor = isBusIdle;
 	comm_count = 0;
 	char* p,*p1,*p_endline;
 	uint32_t chartimeout = 5000;
 	uint32_t t = millis();
-	bool bok=false;
+	comm_buffer[comm_count] = 0;
 	CommSerial.setTimeout(2000);
 	do
 	{
 		if(CommAvailable()){
-			/* char c=CommSerial.read();
-			t = millis();
-			if (comm_count >= sizeof(comm_buffer) - 1) {
-				// buffer full, discard first half
-				debugSerial.println("buffer full");
-				comm_count = sizeof(comm_buffer) / 2 - 1;
-				memcpy(comm_buffer, comm_buffer + sizeof(comm_buffer) / 2, comm_count);
-			  }
-			comm_buffer[comm_count++] = c;
-			comm_buffer[comm_count] = 0; */
 			comm_count = CommSerial.readBytesUntil('\r', comm_buffer, sizeof(comm_buffer)-1);
 			comm_buffer[comm_count] = 0;
-			//if (comm_count%200 ==0) CommSerial.print(200);
-			if (strstr(comm_buffer, End_BusInfo)) {
+			//
+			if (strstr(comm_buffer, begin))
+			{
+				comm_count = 0;
+				comm_buffer[comm_count] = 0;
+				CommSerial.println(begin);
+			}
+			if (strstr(comm_buffer, end_data)) {
 				p = strchr(comm_buffer,'[');
 				p1 =strchr(comm_buffer,']');
 			  if (p==NULL || p1==NULL) break;
@@ -887,28 +715,12 @@ void Get_BusInfor()
 				debugSerial.print("="); debugSerial.println(bccrcv);
 				break;
 			  }
-			  //get station
-			  /* p = strstr(comm_buffer,Set_busStop);
-			  if (p)
-			  {
-				  p += sizeof(Set_busStop) - 1;
-				  p1 = strchr(p,',');
-				  int id=3;
-				  memcpy(&Header[0].text[0],"MT-",id);
-				  while (*p != ',') 
-				  {
-					  Header[0].text[id++] = *p++;
-					  if (id >= sizeof(Header[0].text)-1) break;
-				  }
-				  Header[0].text[id++] = 0;
-			  } */
+			  while(CommSerial.available()) CommSerial.read();
+			  delay(10);
 				bok = true;
-				CommSerial.println(End_BusInfo);
-				debugSerial.println(End_BusInfo);
-				last_update_infor_ts = millis();
-				//[]
-				if (sizercv == 2) infor_index = 1; //nobus
-				//
+				CommSerial.println(end_data);
+				debugSerial.print("OK ");
+				debugSerial.println(end_data);
 				break;
 			}
 		}
@@ -918,258 +730,100 @@ void Get_BusInfor()
 	{
 		debugSerial.println(comm_buffer);
 	}
-	if (!bok) return;
+	return bok;
+}
+void Get_BusInfor_from_buffer()
+{
+	char*p, *p1,*p_endline;
 	//
 	Bus_count = 0;
-	//test only
-	if (TMF_demo==1){
-		//Bus[Bus_count].infor_index = 0;
-		memcpy(&Bus[Bus_count].route_no[0],"TMF\0",sizeof(Bus[0].route_no)-1);
-		memcpy(&Bus[Bus_count].bus_name[0],"Nại Hiên Đông - Công Viên 29/3\0",sizeof(Bus[0].bus_name)-1);
-		memcpy(&Bus[Bus_count].station_from[0],"Nại Hiên Đông\0",sizeof(Bus[0].station_from)-1);
-		memcpy(&Bus[Bus_count].station_to[0],"Công Viên 29/3\0",sizeof(Bus[0].station_to)-1);
-		memcpy(&Bus[Bus_count].car_no[0],"43H12345\0",sizeof(Bus[0].car_no)-1);
-		//memcpy(&Bus[Bus_count].time_arrival[0],"10:20",sizeof(Bus[0].time_arrival)-1);
-		Bus[Bus_count].time_arrival[0] = rtc.hour/10 + 0x30;
-		Bus[Bus_count].time_arrival[1] = rtc.hour%10 + 0x30;
-		Bus[Bus_count].time_arrival[2] = ':';
-		Bus[Bus_count].time_arrival[3] = rtc.minute/10 + 0x30;
-		Bus[Bus_count].time_arrival[4] = rtc.minute%10 + 0x30;
-		Bus[Bus_count].time_arrival[5] = 0;
-		Bus_count+=1;
-	}
-	//busStop_name
-	//"Tentram":"Công viên Hùng Vương"
-	/* p = strstr(comm_buffer,"Tentram");
-	if (p)
-	{
-		p1 = strchr(p,':') + 2;
-		p = strchr(p1,'"');
-		*p = 0;
-		memcpy(&busStop_name[0],p1,sizeof(busStop_name)-1);
-		*p='"';
-		debugSerial.println(busStop_name);
-	} */
+	last_update_infor_ts = millis();
 	
-	p = strstr(comm_buffer,"[{");
-	while(p){
-	p1 = p + 1;
-	p_endline = strstr(p1,"},");
-	if (p_endline == NULL) p_endline = strstr(p1,"}]");
-	if (p_endline == NULL) break;
-	p = strstr(p1,"matuyen");
-	if (p==NULL) break;
-	if (p > p_endline) {p = p_endline; continue;};
-	p1 = strchr(p,':') + 2;
-	p = strchr(p1,'"');
-	*p = 0;
-	debugSerial.println(Bus_count);
-	//if (*p1 == '2') continue;
-	//Bus[Bus_count].infor_index = 0;
-	memcpy(&Bus[Bus_count].route_no[0],p1,sizeof(Bus[0].route_no)-1);
-	debugSerial.println(Bus[Bus_count].route_no);
-	//
-	p1 = p + 1;
-	p = strstr(p1,"tentuyen");
-	if (p==NULL) continue;
-	if (p > p_endline) {p = p_endline; continue;};
-	p1 = strchr(p,':') + 2;
-	p = strchr(p1,'"');
-	*p = 0;
-	memcpy(&Bus[Bus_count].bus_name[0],p1,sizeof(Bus[0].bus_name)-1);
-	debugSerial.println(Bus[Bus_count].bus_name);
-	int name_len = p-p1;
-	//
-	p1 = p + 1;
-	p = strstr(p1,"biensoxe");
-	if (p==NULL) continue;
-	if (p > p_endline) {p = p_endline; continue;};
-	p1 = strchr(p,':') + 2;
-	p = strchr(p1,'"');
-	*p = 0;
-	memcpy(&Bus[Bus_count].car_no[0],p1,sizeof(Bus[0].car_no)-1);
-	debugSerial.println(Bus[Bus_count].car_no);
-	//add bien so xe vao ten tuyen
-	memcpy(&Bus[Bus_count].bus_name[name_len],"- BS Xe: ",9);
-	memcpy(&Bus[Bus_count].bus_name[name_len+9],p1,p-p1+1);
-	//
-	p1 = p + 1;
-	p = strstr(p1,"soluonghanhkhach");
-	if (p==NULL) continue;
-	if (p > p_endline) {p = p_endline; continue;};
-	p1 = strchr(p,':') + 1;
-	p = strchr(p1,',');
-	*p = 0;
-	memcpy(&Bus[Bus_count].passenger[0],p1,sizeof(Bus[0].passenger)-1);
-	debugSerial.println(Bus[Bus_count].passenger);
-	//
-	p1 = p + 1;
-	p = strstr(p1,"thoigianden"); //"thoigianden":"07:48:00"
-	if (p==NULL) continue;
-	if (p > p_endline) {p = p_endline; continue;};
-	p1 = strchr(p,':') + 2;
-	p = strchr(p1,'"');
-	*p = 0;
-	memcpy(&Bus[Bus_count].time_arrival[0],p1,sizeof(Bus[0].time_arrival)-1);
-	debugSerial.println(Bus[Bus_count].time_arrival);
-	//
-	p1 = p + 1;
-	p = strstr(p1,"Benden"); //"Benden":"Bến chợ Hàn"
-	if (p==NULL) continue;
-	if (p > p_endline) {p = p_endline; continue;};
-	p1 = strchr(p,':') + 2;
-	p = strchr(p1,'"');
-	*p = 0;
-	memcpy(&Bus[Bus_count].station_to[0],p1,sizeof(Bus[0].station_to)-1);
-	debugSerial.println(Bus[Bus_count].station_to);
-	//
-	p1 = p + 1;
-	p = strstr(p1,"Bendi"); //"Bendi":"Bến Kim Liên"
-	if (p==NULL) continue;
-	if (p > p_endline) {p = p_endline; continue;};
-	p1 = strchr(p,':') + 2;
-	p = strchr(p1,'"');
-	*p = 0;
-	memcpy(&Bus[Bus_count].station_from[0],p1,sizeof(Bus[0].station_from)-1);
-	debugSerial.println(Bus[Bus_count].station_from);
-	//
-	Bus_count+=1;
-	p = p_endline;
-	//
-	if (Bus_count >= Bus_Max) break;
-	};
-	//hien thi thong tin ten tuyen
-	/* int offset=0;
-	for (int i=0;i<Bus_count;i++)
-	{
-		char tuyen[] = "Tuyến";
-		String str = String(tuyen);
-		int len = str.length();
-		memcpy(&Infor[infor_index].text[offset],&tuyen[0],len); offset += len;
-		Infor[infor_index].text[offset++] = ' ';
-		//
-		str = String(Bus[i].route_no);
-		len = str.length();
-		memcpy(&Infor[infor_index].text[offset],&Bus[i].route_no[0],len); offset += len;
-		Infor[infor_index].text[offset++] = ':';
-		Infor[infor_index].text[offset++] = ' ';
-		//
-		str = String(Bus[i].bus_name);
-		len = str.length();
-		memcpy(&Infor[infor_index].text[offset],&Bus[i].bus_name[0],len); offset += len;
-		if (i<Bus_count-1)
+}
+void Get_BusConfig_from_buffer()
+{
+	bool bisNew_Config = false;
+	Comm_Infor = isBusIdle;
+	//"ConfigTime":1497078249}
+		char *p = strstr(comm_buffer,"ConfigTime");
+		if (p)
 		{
-			Infor[infor_index].text[offset++] = ',';
-			Infor[infor_index].text[offset++] = ' ';
+			p = strchr(p,':') + 1;
+			uint32_t ts = atol(p);
+			if (ts != last_ConfigTime)
+			{
+				bisNew_Config = true;				
+				debugSerial.println("Recieved new Config");
+				last_ConfigTime = ts;
+			}
 		}
-		else Infor[infor_index].text[offset++] = 0;
-	} */
-	/* for (int i=0;i<Bus_count;i++)
-	{
-		p = strchr(Bus[i].bus_name,'-');
-		int len = p - &Bus[i].bus_name[0];
-		if (len > sizeof(Bus[i].station_to)-1) len = sizeof(Bus[i].station_to)-1;
-		memcpy(&Bus[i].station_from[0],&Bus[i].bus_name[0],len);
-		Bus[i].station_from[len-1] =0;
-		p +=1;
-		memcpy(&Bus[i].station_to[0],p,sizeof(Bus[i].station_to)-2);
-	} */
-	//xoa cac hang neu so luong hien thi <3
-	for (int i=Bus_count;i<Bus_Max;i++)
-	{
-		memcpy(&Bus[i].route_no[0]," ",sizeof(Bus[0].route_no)-1);
-		memcpy(&Bus[i].car_no[0]," ",sizeof(Bus[0].car_no)-1);
-		memcpy(&Bus[i].bus_name[0]," ",sizeof(Bus[0].bus_name)-1);
-		memcpy(&Bus[i].time_arrival[0]," ",sizeof(Bus[0].time_arrival)-1);
-		memcpy(&Bus[i].station_from[0]," ",sizeof(Bus[0].station_from)-1);
-		memcpy(&Bus[i].station_to[0]," ",sizeof(Bus[0].station_to)-1);
-	}
-	//update station no
-	matrix.print_Rect(&Frame[0]);
-	//for (int i=5;i<=13;i++)
-	businfo_ts = millis();
-	businfo_index = 0;
-	uint8_t index = frame_infor_index;
-	for (int i=0;i<3;i++)
-	{
-		/* Frame[index].text = &Bus[businfo_index + i].route_no[0]; matrix.print_Rect(&Frame[index++]);
-		if (Frame[index].isdisplaybus_name) Frame[index].text = &Bus[businfo_index + i].bus_name[0];
-		else Frame[index].text = &Bus[businfo_index + i].car_no[0]; 
-		matrix.print_Rect(&Frame[index++]);
-		Frame[index].text = &Bus[businfo_index + i].time_arrival[0]; matrix.print_Rect(&Frame[index++]); */
-	}
-	for (int i=0;i<Line_Max;i++)
-	{
-		if (Line[i].color == BLACK) break;
-		matrix.drawLine(Line[i].x0,Line[i].y0,Line[i].x1,Line[i].y1,Line[i].color);
-	}
-	int infor_i;
-	for (infor_i=0;infor_i<Infor_Max;infor_i++)
-	{
-		if (Compare2array(&Bus[0].route_no[0],&Infor[infor_i].route_no[0]))
+		if (bisNew_Config)
 		{
-			if (infor_i == infor_index)
-			{
-				Frame_Config(false);
-			}
-			else 
-			{
-				infor_index = infor_i;
-				debugSerial.print("route_no="); debugSerial.println(Bus[0].route_no);
-				debugSerial.print("infor_index="); debugSerial.println(infor_index);
-				Frame_Config();
-			}
+			
+		}
+}
+void Get_Route_from_buffer()
+{
+	char*p, *p1;
+	//char temprouteno[12];
+	int index = 0;
+	//"routeNo":"2","routeName":"Kim Liên - Chợ Hàn",
+	p = strstr(comm_buffer,"routeNo");
+	if (p==NULL) return;
+	p1 = strchr(p,':') + 2;
+	p = strchr(p1,'"');
+	*p = 0;
+	//memcpy(&temprouteno[0],p1,sizeof(temprouteno)-1);
+	//Find route index
+	for (int i = 0; i<Route_Max;i++)
+	{
+		if (Route[i].route_no[0] == 0 || Compare2array(&Route[i].route_no[0],p1) )
+		{
+			index = i;			
 			break;
 		}
 	}
-	//
-	//matrix.swapBuffers(true);
-}
-void Get_BusConfig()
-{
-	if (Comm_Infor != isBusConfig) return;
-	Comm_Infor = isBusIdle;
-}
-void Get_DateTime()
-{
-if (Comm_Infor != isSet_Time) return;
-	Comm_Infor = isBusIdle;
-	comm_count = 0;
-	uint32_t chartimeout = 1000;
-	uint32_t t = millis();
-	char *p;
-	bool bok=false;
-	do
+	if (index == Route_Max) 
 	{
-		if(CommAvailable()){
-			char c=CommSerial.read();
-			t = millis();
-			if (comm_count >= sizeof(comm_buffer) - 1) {
-				// buffer full, discard first half
-				debugSerial.println("buffer full");
-				comm_count = sizeof(comm_buffer) / 2 - 1;
-				memcpy(comm_buffer, comm_buffer + sizeof(comm_buffer) / 2, comm_count);
-			  }
-			comm_buffer[comm_count++] = c;
-			comm_buffer[comm_count] = 0;
-			
-			if (strstr(comm_buffer, End_Time)) {
-				bok = true;
-				//CommSerial.println(End_Time);
-				debugSerial.println(End_Time);
-				// if (!(p = strchr(comm_buffer, ':'))) break;
-				// hour = atoi(comm_buffer);				
-				// minute = atoi(++p);
-				// if (!(p = strchr(p, ':'))) break;
-				// sec = atoi(++p);
-				uint32_t u32 = atol(comm_buffer);
-				if (u32 == 0) break;
-				Unixtime_GMT7 = u32 - millis()/1000;
-				Now();
-				break;
-			}
-		}
-	}while (millis()-t < chartimeout);	
+		debugSerial.println("Over Route");
+		return;
+	}
+	debugSerial.print("index="); debugSerial.println(index);
+	memcpy(&Route[index].route_no[0],p1,sizeof(Route[index].route_no)-1);
+	debugSerial.print("route_no="); debugSerial.println(Route[index].route_no);
+	//
+	*p = '"';
+	p1 = p + 1;
+	p = strstr(p1,"routeName");
+	if (p==NULL) return;
+	p1 = strchr(p,':') + 2;
+	p = strchr(p1,'"');
+	*p = 0;
+	memcpy(&Route[index].routeName[0],p1,sizeof(Route[index].routeName)-1);
+	debugSerial.print("routeName="); debugSerial.println(Route[index].routeName);
+	*p = '"';
+	p1 = p + 1;
+	p = strstr(p1,"\"Luotdi"); //"Luotdi":"274 Nguyễn Văn Cừ (Hòa Hiệp Bắc) – 
+	if (p==NULL) return;
+	//p1 = strchr(p,':') + 2;
+	p1 = p;
+	p = strchr(p1,'}');
+	*p = 0;
+	memcpy(&Route[index].infor[0],p1,sizeof(Route[index].infor)-1);
+	debugSerial.print("lotrinh="); debugSerial.println(Route[index].infor);
+}
+void Get_DateTime_from_buffer()
+{
+	char *p = strchr(comm_buffer,'[');
+	if (p == NULL) return;
+	p +=1;
+	uint32_t u32 = atol(p);
+	if (u32 == 0) return;
+	Unixtime_GMT7 = u32 - millis()/1000;
+	Now();
+	//debugSerial.println("Time OK");
+	sprintf(comm_buffer,"Rcv Time: %d/%02d/%02d %02d:%02d:%02d",rtc.year, rtc.month,rtc.day,rtc.hour,rtc.minute,rtc.second);
+	debugSerial.println(comm_buffer);
 }
 void Get_Brightness()
 {
@@ -1339,16 +993,14 @@ bool Compare2array(char* p1,char* p2)
 }
 void ClearBusInfor()
 {
-	infor_index =0;
+	route_index =0;
 	for (int i=Bus_count;i<Bus_Max;i++)
 	{
 		memcpy(&Bus[i].route_no[0]," ",sizeof(Bus[0].route_no)-1);
 		memcpy(&Bus[i].car_no[0]," ",sizeof(Bus[0].car_no)-1);
 		memcpy(&Bus[i].bus_name[0]," ",sizeof(Bus[0].bus_name)-1);
 		memcpy(&Bus[i].time_arrival[0]," ",sizeof(Bus[0].time_arrival)-1);
-		memcpy(&Bus[i].station_from[0]," ",sizeof(Bus[0].station_from)-1);
-		memcpy(&Bus[i].station_to[0]," ",sizeof(Bus[0].station_to)-1);
 	}
-	debugSerial.println("Timeout");
+	debugSerial.println("BusInfor Timeout");
 	Frame_Config();
 }
