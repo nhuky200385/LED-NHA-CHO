@@ -92,7 +92,7 @@ bool pause;
 uint8_t auto_brightness;
 bool auto_adjust_brightness=true;
 bool bstartup;
-
+//Hien thi thong tin chung
 char disp_infor[1003];
 const char loi[]={"MẤT KẾT NỐI ĐẾN SERVER"};
 const char nobus[]={"HIỆN TẠI KHÔNG CÓ XE NÀO SẮP ĐẾN NHÀ CHỜ NÀY "};
