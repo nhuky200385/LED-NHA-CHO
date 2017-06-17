@@ -307,7 +307,11 @@ void Frame_Config()
 	station_ts = millis();
 	swap_station = false;
 	
-	for (int i = 0;i<Frame_Max;i++) Frame[i].changed = 255;
+	for (int i = 0;i<Frame_Max;i++)
+	{
+		Frame[i].changed = all_change;
+		//if (Frame[i].syncScroll) debugSerial.println(i);
+	}
 }
 void Redraw()
 {
@@ -315,25 +319,29 @@ void Redraw()
 	bool isSync_Changed = false;
 	for (int i=0;i<Frame_Max;i++)
 	{
-		if (Frame[i].isScroll && Frame[i].syncScroll && i!=froute_index)
+		if (Frame[i].isScroll && Frame[i].syncScroll)
 		{
-			if (Frame[i].changed & text_change >0) {isSync_Changed = true; break;}
+			// debugSerial.print("changed: ");
+			// debugSerial.print(Frame[i].changed,HEX); debugSerial.print(", ");
+			// debugSerial.print(Frame[i].changed & text_change); debugSerial.print(", ");
+			if ((Frame[i].changed & text_change) >0) {isSync_Changed = true; break;}
 		}
 	}
 	if (isSync_Changed)
 	{
 		for (int i=0;i<Frame_Max;i++)
 		{
-			if (Frame[i].isScroll && Frame[i].syncScroll && i!=froute_index)
+			if (Frame[i].isScroll && Frame[i].syncScroll)
 			{
 				Frame[i].changed |= text_change;
-				Frame[i].scroll_index = 0;
-				Frame[i].scroll_pixel = 0;
-				Frame[i].scroll_position = 0;
-				Frame[i].scroll_length = 0;
+				// Frame[i].scroll_index = 0;
+				// Frame[i].scroll_pixel = 0;
+				// Frame[i].scroll_position = 0;
+				// Frame[i].scroll_length = 0;
 			}
 		}
 		scroll_max = 0;
+		debugSerial.println("isSync_Changed");
 	}
 	for (int i=0;i<Frame_Max;i++)
 	{
@@ -357,11 +365,14 @@ void Redraw()
 		if (!Frame[i].isScroll && Frame[i].changed != no_change) matrix.print_Rect(&Frame[i]);
 		Frame[i].changed = no_change;
 	}
-	for (int i=0;i<Frame_Max;i++)
+	if (isSync_Changed)
 	{
-		if (Frame[i].isScroll && Frame[i].syncScroll && i!=froute_index)
+		for (int i=0;i<Frame_Max;i++)
 		{
-			Frame[i].scroll_length = scroll_max;
+			if (Frame[i].isScroll && Frame[i].syncScroll && i!=froute_index)
+			{
+				Frame[i].scroll_length = scroll_max;
+			}
 		}
 	}
 	if (last_ConfigTime > 0)
@@ -373,6 +384,17 @@ void Redraw()
 		}
 	}
 	matrix.swapBuffers(true);
+	
+	// debugSerial.print("Position: ");
+	// debugSerial.print(Frame[6].scroll_position); debugSerial.print(", ");
+	// debugSerial.print(Frame[9].scroll_position); debugSerial.print(", ");
+	// debugSerial.print(Frame[12].scroll_position); debugSerial.println();
+	// debugSerial.print("scroll_max: ");
+	// debugSerial.println(scroll_max);
+	// debugSerial.print("scroll_length: ");
+	// debugSerial.print(Frame[6].scroll_length); debugSerial.print(", ");
+	// debugSerial.print(Frame[9].scroll_length); debugSerial.print(", ");
+	// debugSerial.print(Frame[12].scroll_length); debugSerial.println();
 }
 void setup() {
 
@@ -414,6 +436,11 @@ void loop() {
 	long ml = millis();
 	if (ml - brightness_ts >=5000 )
 	{
+		// debugSerial.print("Position: ");
+		// debugSerial.print(Frame[6].scroll_position); debugSerial.print(", ");
+		// debugSerial.print(Frame[9].scroll_position); debugSerial.print(", ");
+		// debugSerial.print(Frame[12].scroll_position); debugSerial.println();
+		
 		brightness_ts = ml;
 		//debugSerial.print("A7="); debugSerial.println(analogRead(A7));
 		float f=0;
@@ -824,6 +851,7 @@ void Get_BusInfor_from_buffer()
 		}
 		else
 		{
+			debugSerial.println("New Bus");
 			Bus[id].changed = all_change;
 			Bus[id].visible = bus_temp.visible;
 			Bus[id].display_index = bus_temp.display_index;
@@ -943,14 +971,14 @@ void Get_BusInfor_from_buffer1()
 		if(Bus[id].route_no[0] ==0)
 		{
 			debugSerial.println("route_no =0");
-			Bus[id].changed = 255;
+			Bus[id].changed = all_change;
 			exist = true;
 			break;
 		}else debugSerial.println(Bus[id].route_no);
 		if(Compare2array(bus_temp.route_no,Bus[id].route_no))
 		{
 			exist = true;
-			if(bus_temp.display_index != Bus[id].display_index) {debugSerial.println("index changed"); Bus[id].changed = 255; break;}
+			if(bus_temp.display_index != Bus[id].display_index) {debugSerial.println("index changed"); Bus[id].changed = all_change; break;}
 			if(Compare2array(bus_temp.car_no,Bus[id].car_no) == false) {debugSerial.println("car_no changed"); Bus[id].changed |= car_no_change;}
 			if(Compare2array(bus_temp.time_arrival,Bus[id].time_arrival) == false) {debugSerial.println("time_arrival changed"); Bus[id].changed |= time_change;}
 			if(Compare2array(bus_temp.passenger,Bus[id].passenger) == false) {debugSerial.println("passenger changed"); Bus[id].changed |= passenger_change;}
@@ -964,7 +992,7 @@ void Get_BusInfor_from_buffer1()
 	{
 		//Bus[id].changed = true;
 		id = Bus_count++;
-		Bus[id].changed = 255;
+		Bus[id].changed = all_change;
 	}
 	//if (Bus[id].changed)
 	{

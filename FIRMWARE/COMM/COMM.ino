@@ -1313,7 +1313,11 @@ uint8_t Check_display_Running()
 	  else DEBUG_SERIAL(tempbuffer);
   }
   if (!ret) Comm_Error += 1;
-  if (n==0) DEBUG_SERIAL("[DISPLAY] NOT Response\n");
+  if (n==0) 
+  {
+	  DEBUG_SERIAL("[DISPLAY] NOT Response\n");
+	  if (millis()<10000) Comm_Error = 10; //Reset display
+  }
   return Comm_Error;
 }
 void Reset_display()
