@@ -49,7 +49,7 @@ uint32_t flash_ts,brightness_ts,businfo_ts,station_ts;
 uint8_t businfo_index=0;
 uint32_t last_update_infor_ts;
 const uint32_t update_info_timeout = 300000; //5M
-uint32_t last_ConfigTime;
+uint32_t last_ConfigTime = 0;
 
 #include "Adafruit_GFX.h"
 #include "RGBmatrixPanel_7.h"
@@ -312,6 +312,29 @@ void Frame_Config()
 void Redraw()
 {
 	int16_t scroll_max=0,current_sc_len=0;
+	bool isSync_Changed = false;
+	for (int i=0;i<Frame_Max;i++)
+	{
+		if (Frame[i].isScroll && Frame[i].syncScroll && i!=froute_index)
+		{
+			if (Frame[i].changed & text_change >0) {isSync_Changed = true; break;}
+		}
+	}
+	if (isSync_Changed)
+	{
+		for (int i=0;i<Frame_Max;i++)
+		{
+			if (Frame[i].isScroll && Frame[i].syncScroll && i!=froute_index)
+			{
+				Frame[i].changed |= text_change;
+				Frame[i].scroll_index = 0;
+				Frame[i].scroll_pixel = 0;
+				Frame[i].scroll_position = 0;
+				Frame[i].scroll_length = 0;
+			}
+		}
+		scroll_max = 0;
+	}
 	for (int i=0;i<Frame_Max;i++)
 	{
 		if (Frame[i].w == 0) continue;
@@ -341,10 +364,13 @@ void Redraw()
 			Frame[i].scroll_length = scroll_max;
 		}
 	}
-	for (int i=0;i<Line_Max;i++)
+	if (last_ConfigTime > 0)
 	{
-		if (Line[i].color == BLACK) break;
-		matrix.drawLine(Line[i].x0,Line[i].y0,Line[i].x1,Line[i].y1,Line[i].color);
+		for (int i=0;i<Line_Max;i++)
+		{
+			if (Line[i].color == BLACK) break;
+			matrix.drawLine(Line[i].x0,Line[i].y0,Line[i].x1,Line[i].y1,Line[i].color);
+		}
 	}
 	matrix.swapBuffers(true);
 }
@@ -364,7 +390,7 @@ void setup() {
 	matrix.Set_brightness(2);
 	
 	Init_bus();
-	Frame_Config();	
+	Frame_Config();
 	
 	delay(500);
 	check_mem_free();
@@ -460,10 +486,11 @@ void Scroll_process()
 			
 			for (int i=0;i<3;i++)
 			{
-				Frame[index].text = &Bus[businfo_index + i].route_no[0]; matrix.print_Rect(&Frame[index++]);
-				Frame[index].text = &Bus[businfo_index + i].bus_name[0]; matrix.print_Rect(&Frame[index++]);
-				Frame[index].text = &Bus[businfo_index + i].time_arrival[0]; matrix.print_Rect(&Frame[index++]);
+				Frame[index].text = &Bus[businfo_index + i].route_no[0]; Frame[index++].changed = text_change;//matrix.print_Rect(&Frame[index++]);
+				Frame[index].text = &Bus[businfo_index + i].bus_name[0]; Frame[index++].changed = text_change;//matrix.print_Rect(&Frame[index++]);
+				Frame[index].text = &Bus[businfo_index + i].time_arrival[0]; Frame[index++].changed = text_change;//matrix.print_Rect(&Frame[index++]);
 			}
+			Redraw();
 			//Frame[3].text = &bendi[0];
 			//matrix.print_Rect(&Frame[3]);
 			station_ts = ml;
@@ -539,10 +566,13 @@ void Scroll_process()
 				debugSerial.println();
 			} */
 		}
-		for (int i=0;i<Line_Max;i++)
+		if (last_ConfigTime > 0)
 		{
-			if (Line[i].x1 == 0 && Line[i].y1 == 0) break;
-			matrix.drawLine(Line[i].x0,Line[i].y0,Line[i].x1,Line[i].y1,Line[i].color);
+			for (int i=0;i<Line_Max;i++)
+			{
+				if (Line[i].color == BLACK) break;
+				matrix.drawLine(Line[i].x0,Line[i].y0,Line[i].x1,Line[i].y1,Line[i].color);
+			}
 		}
 		matrix.swapBuffers(true);
 		last_scroll_ts = ml;
@@ -715,20 +745,21 @@ bool Get_datafromServer(const char* begin,const char* end_data)
 	// }
 	return bok;
 }
-//[{index=0,route_no=9,car_no=43B-01386,time=15:13,passenger=0,visible=1}{index=1,route_no=2,car_no=43B-01768,time=15:20,passenger=0,visible=1}{index=2,route_no=7,car_no=43B-03024,time=15:25,passenger=0,visible=1}]
 void Get_BusInfor_from_buffer()
 {
 	char*p, *p1,*p_endline;
 	
-	bool bno_change = false;
+	bool bno_change;
 	int id;
 	last_update_infor_ts = millis();
-	//index=%d,route_no=%s,car_no=%s,time=%s,passenger=%s,visible=%d,
+	//
 	p1 = strstr(comm_buffer,"[{");
 	int Bus_count_temp = 0;
 	while (p1)
 	{
+		bno_change = false;
 		id = Bus_count_temp;
+		Bus[id].changed = no_change;
 		p_endline = strstr(p1,"}");
 		*p_endline = 0;
 		if (p_endline == NULL) break;
@@ -740,7 +771,7 @@ void Get_BusInfor_from_buffer()
 		p = strstr(p1,"no_change");
 		if (p) {bno_change = true; goto next_;}
 		p = strstr(p1,"route_no=");
-		if (p == NULL) return;
+		if (p == NULL) break;
 		p1 = strchr(p,'=') + 1;
 		p = strchr(p1,',');
 		*p = 0;
@@ -785,18 +816,22 @@ void Get_BusInfor_from_buffer()
 			memcpy(&Bus[id].car_no[0],bus_temp.car_no,sizeof(Bus[id].car_no)-1);
 			memcpy(&Bus[id].time_arrival[0],bus_temp.time_arrival,sizeof(Bus[id].time_arrival)-1);
 			memcpy(&Bus[id].passenger[0],bus_temp.passenger,sizeof(Bus[id].passenger)-1);			
-			if(Bus[id].bus_name[0]==0) Find_BusName(&Bus[id].route_no[0],&Bus[id].bus_name[0],sizeof(Bus[id].bus_name)-1);
+			if(Bus[id].bus_name[0]==0 || (Bus[id].changed & car_no_change)>0)
+			{
+				Find_BusName(id);
+				Bus[id].changed |= text_change;
+			}
 		}
 		else
 		{
-			Bus[id].changed = 255;
+			Bus[id].changed = all_change;
 			Bus[id].visible = bus_temp.visible;
 			Bus[id].display_index = bus_temp.display_index;
 			memcpy(&Bus[id].route_no[0],bus_temp.route_no,sizeof(Bus[id].route_no)-1);
 			memcpy(&Bus[id].car_no[0],bus_temp.car_no,sizeof(Bus[id].car_no)-1);
 			memcpy(&Bus[id].time_arrival[0],bus_temp.time_arrival,sizeof(Bus[id].time_arrival)-1);
 			memcpy(&Bus[id].passenger[0],bus_temp.passenger,sizeof(Bus[id].passenger)-1);			
-			Find_BusName(&Bus[id].route_no[0],&Bus[id].bus_name[0],sizeof(Bus[id].bus_name)-1);			
+			Find_BusName(id);	
 		}
 		sprintf(serial_buffer,"Bus %d:route_no=%s,car_no=%s,time=%s,passenger=%s,bus_name=%s",id,Bus[id].route_no,Bus[id].car_no,Bus[id].time_arrival,Bus[id].passenger,Bus[id].bus_name);
 		debugSerial.println(serial_buffer);
@@ -812,21 +847,46 @@ next_:
 		p1 = p_endline + 1;
 	}
 	Bus_count = Bus_count_temp;
-	ClearBusInfor();
+	for (int i=Bus_count;i<Bus_Max;i++)
+	{
+		if (Bus[i].route_no[0] == 0) break;
+		memcpy(&Bus[i].route_no[0],"\0",sizeof(Bus[0].route_no)-1);
+		memcpy(&Bus[i].car_no[0],"\0",sizeof(Bus[0].car_no)-1);
+		memcpy(&Bus[i].bus_name[0],"\0",sizeof(Bus[0].bus_name)-1);
+		memcpy(&Bus[i].time_arrival[0],"\0",sizeof(Bus[0].time_arrival)-1);
+	}
+	//
+	int index = frow1_c1;
+	if (Bus_count<=3) businfo_index = 0;
+	for (int i=0;i<3;i++)
+	{
+		Frame[index].text = &Bus[businfo_index + i].route_no[0]; Frame[index++].changed = Bus[businfo_index + i].changed;
+		Frame[index].text = &Bus[businfo_index + i].bus_name[0]; Frame[index++].changed = (Bus[businfo_index + i].changed & text_change) > 0 ? text_change : no_change;
+		Frame[index].text = &Bus[businfo_index + i].time_arrival[0]; Frame[index++].changed = (Bus[businfo_index + i].changed & time_change) > 0 ? text_change : no_change;
+		//debugSerial.println(Bus[businfo_index + i].changed,BIN);
+	}
+	Frame[froute_index].text = &Bus[0].route_no[0]; Frame[froute_index].changed = text_change;
+	Redraw();
 }
-void Find_BusName(char* routeNo,char* dest,int len)
+void Find_BusName(int id)
 {
 	bool found=false;
+	char *p,*p1;
 	for (int i=0;i<Route_Max;i++)
 	{
 		if(Route[i].route_no == 0) break;
-		if(Compare2array(Route[i].route_no,routeNo))
+		if(Compare2array(Route[i].route_no,Bus[id].route_no))
 		{
 			found = true;
-			memcpy(dest,Route[i].routeName,len);
+			memcpy(Bus[id].bus_name,Route[i].routeName,sizeof(Bus[id].bus_name)-1);
+			p = &Bus[id].bus_name[0];
+			p1 = strchr(p,'\0');
+			memcpy(p1," - BS Xe: ",10); p1 += 10;
+			memcpy(p1,Bus[id].car_no,sizeof(Bus[id].car_no));
+			Bus[id].bus_name[sizeof(Bus[id].bus_name)-1] = 0;			
 		}
 	}
-	if (!found) memset(dest,0,len);
+	if (!found) memcpy(Bus[id].bus_name,Bus[id].car_no,sizeof(Bus[id].car_no)-1);
 }
 void Get_BusInfor_from_buffer1()
 {
@@ -935,15 +995,20 @@ void Get_BusConfig_from_buffer()
 			{
 				bisNew_Config = true;				
 				debugSerial.println("Recieved new Config");
+				//debugSerial.flush();
 				last_ConfigTime = ts;
 			}
 		}
-		if (bisNew_Config)
+		if (bisNew_Config) //return;
 		{
 			for (int i=0;i<Frame_Max;i++)
 			{
-				String s = "c" + String(i) + "\"";
-				s.toCharArray(buf,sizeof(buf));
+				// check_mem_free();
+				// debugSerial.println("begin");
+				// debugSerial.flush();
+				sprintf(buf,"\"c%d\"",i+1);
+				// debugSerial.println(buf);
+				// debugSerial.flush();
 				p = strstr(comm_buffer,buf);
 				if (p==NULL) continue;
 				p1 = strchr(p,':') + 2;
@@ -954,8 +1019,7 @@ void Get_BusConfig_from_buffer()
 					Frame[i].changed |= color_change;
 				}
 				//
-				s = "s" + String(i) + "\"";
-				s.toCharArray(buf,sizeof(buf));
+				sprintf(buf,"\"s%d\"",i+1);
 				p = strstr(comm_buffer,buf);
 				if (p==NULL) continue;
 				p1 = strchr(p,':') + 2;
@@ -972,7 +1036,7 @@ void Get_BusConfig_from_buffer()
 						Frame[i].changed |= text_change;
 					}
 				}
-				else
+				else if (i<frow1_c1)
 				{
 					if (Compare2array(p1,Frame[i].text) == false)
 					{
@@ -1012,7 +1076,7 @@ void Get_Route_from_buffer()
 		debugSerial.println("Over Route");
 		return;
 	}
-	debugSerial.print("index="); debugSerial.println(index);
+	//debugSerial.print("index="); debugSerial.println(index);
 	memcpy(&Route[index].route_no[0],p1,sizeof(Route[index].route_no)-1);
 	debugSerial.print("route_no="); debugSerial.println(Route[index].route_no);
 	//
@@ -1024,7 +1088,7 @@ void Get_Route_from_buffer()
 	p = strchr(p1,'"');
 	*p = 0;
 	memcpy(&Route[index].routeName[0],p1,sizeof(Route[index].routeName)-1);
-	debugSerial.print("routeName="); debugSerial.println(Route[index].routeName);
+	//debugSerial.print("routeName="); debugSerial.println(Route[index].routeName);
 	//
 	*p = '"';
 	p1 = p + 1;
@@ -1034,7 +1098,7 @@ void Get_Route_from_buffer()
 	p = strchr(p1,'"');
 	*p = 0;
 	memcpy(&Route[index].from[0],p1,sizeof(Route[index].from)-1);
-	debugSerial.print("bendi="); debugSerial.println(Route[index].from);
+	//debugSerial.print("bendi="); debugSerial.println(Route[index].from);
 	//
 	*p = '"';
 	p1 = p + 1;
@@ -1044,7 +1108,7 @@ void Get_Route_from_buffer()
 	p = strchr(p1,'"');
 	*p = 0;
 	memcpy(&Route[index].to[0],p1,sizeof(Route[index].to)-1);
-	debugSerial.print("benden="); debugSerial.println(Route[index].to);
+	//debugSerial.print("benden="); debugSerial.println(Route[index].to);
 	//
 	*p = '"';
 	p1 = p + 1;
@@ -1055,7 +1119,7 @@ void Get_Route_from_buffer()
 	p = strchr(p1,'}');
 	*p = 0;
 	memcpy(&Route[index].infor[0],p1,sizeof(Route[index].infor)-1);
-	debugSerial.print("lotrinh="); debugSerial.println(Route[index].infor);
+	//debugSerial.print("lotrinh="); debugSerial.println(Route[index].infor);
 }
 void Get_DateTime_from_buffer()
 {
@@ -1245,7 +1309,7 @@ void ClearBusInfor()
 		memcpy(&Bus[i].car_no[0],"\0",sizeof(Bus[0].car_no)-1);
 		memcpy(&Bus[i].bus_name[0],"\0",sizeof(Bus[0].bus_name)-1);
 		memcpy(&Bus[i].time_arrival[0],"\0",sizeof(Bus[0].time_arrival)-1);
-	}
+	}	
 	debugSerial.println("BusInfor Timeout");
 	Redraw();
 }

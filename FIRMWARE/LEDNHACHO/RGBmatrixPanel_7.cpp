@@ -227,6 +227,14 @@ void RGBmatrixPanel::print_Rect(const GFXfont *f,const GFXfont *fvn,char *s,uint
 				if (toUpper) if (( ch >= 'a' ) && ( ch <= 'z' ))  ch &= 0xDF;
 				write(ch);				
 			}
+			else if (*p == 0xE2) //E2 80 93
+			{
+				char ch = '-'; //0x2D
+				setFont(f);
+				if (toUpper) if (( ch >= 'a' ) && ( ch <= 'z' ))  ch &= 0xDF;
+				write(ch);
+				y = 2;
+			}
 			else
 			{
 				c1 = *p;
@@ -352,6 +360,14 @@ void RGBmatrixPanel::print_Rect(const GFXfont *f,const GFXfont *fvn,char *s,uint
 		{
 			setFont(f);
 			write(*p);
+		}
+		else if (*p == 0xE2) //E2 80 93
+		{
+			char ch = '-'; //0x2D
+			setFont(f);
+			if (toUpper) if (( ch >= 'a' ) && ( ch <= 'z' ))  ch &= 0xDF;
+			write(ch);
+			y = 2;
 		}
 		else
 		{
@@ -514,6 +530,14 @@ void RGBmatrixPanel::print_Rect_scroll(frame_struct *fr)
 			setFont(fr->f);
 			if (fr->toUpper) if (( ch >= 'a' ) && ( ch <= 'z' ))  ch &= 0xDF;
 			write(ch);
+		}
+		else if (*p == 0xE2) //E2 80 93
+		{
+			char ch = '-'; //0x2D
+			setFont(fr->f);
+			if (fr->toUpper) if (( ch >= 'a' ) && ( ch <= 'z' ))  ch &= 0xDF;
+			write(ch);
+			y = 2;
 		}
 		else
 		{
@@ -700,6 +724,14 @@ void RGBmatrixPanel::print_Rect(frame_struct *fr)
 				setFont(fr.f);
 				write(*p);
 			}
+			else if (*p == 0xE2) //E2 80 93
+		{
+			char ch = '-'; //0x2D
+			setFont(fr->f);
+			if (fr->toUpper) if (( ch >= 'a' ) && ( ch <= 'z' ))  ch &= 0xDF;
+			write(ch);
+			y = 2;
+		}
 			else
 			{
 				c1 = *p;
@@ -807,6 +839,14 @@ void RGBmatrixPanel::print_Rect(frame_struct *fr)
 		{
 			setFont(fr.f);
 			write(*p);
+		}
+		else if (*p == 0xE2) //E2 80 93
+		{
+			char ch = '-'; //0x2D
+			setFont(fr->f);
+			if (fr->toUpper) if (( ch >= 'a' ) && ( ch <= 'z' ))  ch &= 0xDF;
+			write(ch);
+			y = 2;
 		}
 		else
 		{

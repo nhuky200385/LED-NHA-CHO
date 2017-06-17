@@ -441,7 +441,7 @@ void loop() {
 			 StartEthernet();
 		 }	 
 	 //Send_DateTime();
-	 if (Comm_Infor == isBusInfo) {
+	 while (Comm_Infor == isBusInfo) {
 		 Get_BusInfor_from_buffer();
 		 //Send config
 		 if (!Config_sent)
@@ -453,8 +453,10 @@ void loop() {
 				lastCheckConfig_timeStamp = millis();
 			}
 		 }
+		 if (!Config_sent) break; //loi ko gui dc
 		 //Send Route Infomation
-		 for (int i=0;i<Bus_count;i++)
+		 int i=0;
+		 for (i=0;i<Bus_count;i++)
 		 {
 			if (!Bus[i].route_sent)
 			{
@@ -462,6 +464,7 @@ void loop() {
 				else break;
 			}
 		 }
+		 if (i<Bus_count) break; //loi ko gui dc
 		 //Send_BusInfor();
 		 String s="[";
 		 for (int k=0;k<Bus_count;k++)
@@ -493,12 +496,12 @@ void loop() {
 		 }
 		s += "]";
 		s.toCharArray(data_buffer,sizeof(data_buffer)-1);
-		DEBUG_SERIAL("%s\n",data_buffer);
+		//DEBUG_SERIAL("%s\n",data_buffer);
 		if (Send_data2display(Begin_BusInfo,End_BusInfo))
 		{
 			for (int k=0;k<Bus_count;k++) Bus[k].changed = false;
 		}
-		 
+		Comm_Infor=0;
 	 }
 	 if (Comm_Infor>0) Comm_Infor=0;
 	 lastGet_timeStamp = millis();
@@ -518,6 +521,7 @@ if (bDisplay_isRunning && millis()-lastCheckConfig_timeStamp>(EEData.time_checkc
 }
 void DebugFromDisplay()
 {	int n = 0;
+	tempbuffer[n] = 0;
 	if (displaySerial.available())
 	{
 		n=displaySerial.readBytesUntil('\n', tempbuffer, sizeof(tempbuffer));	
@@ -738,14 +742,19 @@ void Reset_Bus()
 	}bus_struct; */
 	for (int i=0;i<Bus_Max;i++)
 	{
-		Bus[i].route_no[0] = 0;
-		Bus[i].car_no[0] = 0;
-		Bus[i].time_arrival[0] = 0;
-		Bus[i].passenger[0] = 0;
+		// Bus[i].route_no[0] = 0;
+		// Bus[i].car_no[0] = 0;
+		// Bus[i].time_arrival[0] = 0;
+		// Bus[i].passenger[0] = 0;
 		Bus[i].changed = false;
 		Bus[i].visible = false;
 		Bus[i].route_sent = false;
 		Bus[i].display_index = 0;
+		//
+		memset(Bus[i].route_no,0,sizeof(Bus[i].route_no)-1);
+		memset(Bus[i].car_no,0,sizeof(Bus[i].car_no)-1);
+		memset(Bus[i].time_arrival,0,sizeof(Bus[i].time_arrival)-1);
+		memset(Bus[i].passenger,0,sizeof(Bus[i].passenger)-1);
 	}
 	Bus_count = 0;
 	unixTime_sent = 0;
@@ -778,6 +787,11 @@ bool Get_Config()
 }
 bool Get_Infor()
 {
+	if (bDateTime_OK && EEData.BusStopNo[1] == 0 && EEData.BusStopNo[0] == '0')
+	  {
+		 DEBUG_SERIAL("Not yet config BusStop=%s\n",EEData.BusStopNo);
+		 return false;
+	  }
 	if (EEData.Interface == from_Ethernet) return GET_Infor_from_Ethernet();
 	else if (EEData.Interface == from_WIFI) return GET_Infor_from_Wifi();
 	else return false;
@@ -832,10 +846,7 @@ bool GET_Config_from_Ethernet()
 bool GET_Infor_from_Ethernet()
 {
 	data_buffer[0] = 0;
-  if (EEData.BusStopNo[1] == 0 && EEData.BusStopNo[0] == '0' )
-  {
-	 DEBUG_SERIAL("Not yet config BusStop=%s\n",EEData.BusStopNo);
-  }
+  
 	//DEBUG_SERIAL("connect to %s:%s\n",EEData.host,EEData.port);
   if (Eclient.connect(EEData.host, EEData.port)) {
     DEBUG_SERIAL("connected\n");
@@ -923,7 +934,7 @@ int handleHeaderResponse(EthernetClient cli,const unsigned long getTimeout)
         if(len > 0) {
             String headerLine = cli.readStringUntil('\n');
             headerLine.trim(); // remove \r
-			DEBUG_SERIAL("%s\n",headerLine.c_str());
+			//DEBUG_SERIAL("%s\n",headerLine.c_str());
             lastDataTime = millis();
 
             ////DEBUG_HTTPCLIENT("[HTTP-Client][handleHeaderResponse] RX: '%s'\n", headerLine.c_str());
@@ -1037,10 +1048,7 @@ bool GET_Infor_from_Wifi()
 		Get_Error +=1;
 		return false;
 	}
-	if (EEData.BusStopNo[1] == 0 && EEData.BusStopNo[0] == '0' )
-  {
-	 DEBUG_SERIAL("Not yet config BusStop=%s\n",EEData.BusStopNo);
-  }
+	
 	WiFiClient client1;
 	//DEBUG_SERIAL("connect to %s:%s\n",EEData.host,EEData.port);
   if (client1.connect(EEData.host, EEData.port)) {
@@ -1137,7 +1145,7 @@ int handleHeaderResponse(WiFiClient cli,const unsigned long getTimeout)
         if(len > 0) {
             String headerLine = cli.readStringUntil('\n');
             headerLine.trim(); // remove \r
-			DEBUG_SERIAL("%s\n",headerLine.c_str());
+			//DEBUG_SERIAL("%s\n",headerLine.c_str());
             lastDataTime = millis();
 
             ////DEBUG_HTTPCLIENT("[HTTP-Client][handleHeaderResponse] RX: '%s'\n", headerLine.c_str());
