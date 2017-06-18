@@ -93,11 +93,10 @@ bool auto_adjust_brightness=true;
 bool bstartup;
 //Hien thi thong tin chung
 char disp_infor[1003];
-const char loi[]={"MẤT KẾT NỐI ĐẾN SERVER"};
+bool bisCommonInfor;
+const char waitData[]={"ĐANG KẾT NỐI ĐẾN SERVER, VUI LÒNG CHỜ!"};
+const char lostConnection[]={"ĐANG KẾT NỐI ĐẾN SERVER"};
 const char nobus[]={"HIỆN TẠI KHÔNG CÓ XE NÀO SẮP ĐẾN NHÀ CHỜ NÀY "};
-
-char bendi[] = {"Đ.đầu\0"};
-char benden[] = {"Đ.cuối\0"};
 
 uint32_t Unixtime_GMT7;
 #define SECONDS_FROM_1970_TO_2000 946684800
@@ -114,7 +113,8 @@ struct {
 /* typedef struct{
 	char text[30];
 }header_struct; */
-header_struct Header[5];
+#define Header_Max 5
+header_struct Header[Header_Max];
 
 /* typedef struct {
 	char route_no[10],car_no[10],time_arrival[10];
@@ -136,39 +136,13 @@ int route_index=0;
 	// bool isScroll;
 	//int16_t yOffsetPlus;
 // }frame;
-#define Frame_Max 20
+#define Frame_Max 16
 int Frame_count;
-uint8_t Frame_Stype=5;
-frame_struct Frame[20];
-/* {
-	{1,0,93,14,YELLOW,LEFT,&Tahoma_12B,NULL,&Header[0].text[0],false,-4}, //0
-	{91,0,37,14,YELLOW,LEFT,&TahomaNumber_10B,NULL,&Header[1].text[0],false,-1}, //1
-	//
-	{1,16,44,16,RED,LEFT,&Tahoma_8,&Tahoma_8VN,&Header[2].text[0],false,0}, //2
-	{45,16,44,16,GREEN,LEFT,&Tahoma_8,&Tahoma_8VN,&Header[3].text[0],false,0}, //3 &Header[3].text[0]
-	{88,16,40,16,YELLOW,RIGHT,&Tahoma_8,&Tahoma_8VN,&Header[4].text[0],false,0}, //4
-	//
-	{1,34,44,8,RED,CENTER,&Tahoma_8,NULL,&Bus[0].route_no[0],false,-4}, //5
-	{45,34,52,8,GREEN,LEFT,&Tahoma_8,NULL,&Bus[0].car_no[0],false,-4}, //6
-	{97,34,31,8,YELLOW,RIGHT,&Tahoma_8,NULL,&Bus[0].time_arrival[0],false,-4}, //7
-	//
-	{1,47,44,8,RED,CENTER,&Tahoma_8,NULL,&Bus[1].route_no[0],false,-4}, //8
-	{45,47,52,8,GREEN,LEFT,&Tahoma_8,NULL,&Bus[1].car_no[0],false,-4}, //9
-	{97,47,31,8,YELLOW,RIGHT,&Tahoma_8,NULL,&Bus[1].time_arrival[0],false,-4}, //10
-	//
-	{1,60,44,8,RED,CENTER,&Tahoma_8,NULL,&Bus[2].route_no[0],false,-4}, //11
-	{45,60,52,8,GREEN,LEFT,&Tahoma_8,NULL,&Bus[2].car_no[0],false,-4}, //12
-	{97,60,31,8,YELLOW,RIGHT,&Tahoma_8,NULL,&Bus[2].time_arrival[0],false,-4}, //13
-	//
-	{0,72,128,24,GREEN,LEFT,&Tahoma_12,&Tahoma_12VN,&Infor[route_index].text[0],true,1}, //14
-	//{0,72,128,24,GREEN,LEFT,&Tahoma_12,&Tahoma_12VN,&tmf_bdl[0],true,0},
-	{0,0,0,0,RED,LEFT,NULL,NULL,NULL,false,0},
-	{0,0,0,0,RED,LEFT,NULL,NULL,NULL,false,0},
-	{0,0,0,0,RED,LEFT,NULL,NULL,NULL,false,0},
-	{0,0,0,0,RED,LEFT,NULL,NULL,NULL,false,0},
-	{0,0,0,0,RED,LEFT,NULL,NULL,NULL,false,0},
-}; */
-//frame_struct *Frame_scroll;
+frame_struct Frame[Frame_Max];
+
+//luu thong tin noi dung cau hinh
+configInfor_struct configInfor[Frame_Max];
+
 #define Line_Max 12
 int Line_count;
 //uint16_t x0,y0,x1,y1,color
@@ -206,12 +180,22 @@ enum
 
 void Init_bus()
 {
-	memcpy(&Header[ftitle].text[0],"TMF BUS",sizeof(Header[0].text)-1);
-	memcpy(&Header[ftime].text[0],"00:00",sizeof(Header[0].text)-1);
-	memcpy(&Header[froute].text[0],"Tuyến",sizeof(Header[0].text)-1);
-	memcpy(&Header[froute_info].text[0]," ",sizeof(Header[0].text)-1);
-	memcpy(&Header[ftime_arrival].text[0],"Giờđến",sizeof(Header[0].text)-1);
+	// memcpy(&Header[ftitle].text[0],"TMF BUS",sizeof(Header[0].text)-1);
+	// memcpy(&Header[ftime].text[0],"00:00",sizeof(Header[0].text)-1);
+	// memcpy(&Header[froute].text[0],"Tuyến",sizeof(Header[0].text)-1);
+	// memcpy(&Header[froute_info].text[0]," ",sizeof(Header[0].text)-1);
+	// memcpy(&Header[ftime_arrival].text[0],"Giờđến",sizeof(Header[0].text)-1);
 	//
+	int size = sizeof(configInfor[0].text);
+	for (int i =0;i<Frame_Max;i++)
+	{
+		memset(configInfor[i].text,0,size);
+	}
+	size = sizeof(Header[0].text);
+	for (int i =0;i<Frame_Max;i++)
+	{
+		memset(Header[i].text,0,size);
+	}
 	Bus_count = 0;
 }
 void Process_Serialbuffer(Stream& inStream)
@@ -300,9 +284,9 @@ void Frame_Config()
 	Frame[frow3_c2] = {23,61,73,15,GREEN,LEFT,&Tahoma_8,&Tahoma_8VN,&Bus[2].bus_name[0],true,-1,true,true}; //12
 	Frame[frow3_c3] = {96,61,32,15,YELLOW,RIGHT,&Tahoma_8B,NULL,&Bus[2].time_arrival[0],false,-1}; //13
 	
-	Frame[froute_index] = {0,76,22,24,RED,CENTER,&Tahoma_12B,&Tahoma_12BVN,&Bus[0].route_no[0],false,-1,false}; //14
-	Frame[finfor] = {22,76,106,24,GREEN,LEFT,&Tahoma_12,&Tahoma_12VN,&Route[route_index].infor[0],true,0,true}; //15
-			
+	Frame[froute_index] = {0,76,0,24,RED,CENTER,&Tahoma_12B,&Tahoma_12BVN,&Bus[0].route_no[0],false,-1,false}; //14
+	Frame[finfor] = {0,76,106,24,GREEN,LEFT,&Tahoma_12,&Tahoma_12VN,&waitData[0],true,0,true}; //15
+	//22 -> 0		
 			
 	station_ts = millis();
 	swap_station = false;
@@ -480,6 +464,8 @@ void loop() {
 		if (Bus_count>0)
 		{
 			Bus_count = 0;
+			Frame[finfor].text = &lostConnection[0];
+			Frame[finfor].changed = text_change;
 			ClearBusInfor();
 		}
 	}
@@ -893,28 +879,59 @@ next_:
 		Frame[index].text = &Bus[businfo_index + i].time_arrival[0]; Frame[index++].changed = (Bus[businfo_index + i].changed & time_change) > 0 ? text_change : no_change;
 		//debugSerial.println(Bus[businfo_index + i].changed,BIN);
 	}
-	Frame[froute_index].text = &Bus[0].route_no[0]; Frame[froute_index].changed = text_change;
+	if (!bisCommonInfor)
+	{
+		if (Bus_count == 0) Frame[finfor].text = &nobus[0];
+		else{
+			if (Compare2array(Frame[froute_index].text,Bus[0].route_no) == false)
+			{
+				Frame[froute_index].text = &Bus[0].route_no[0]
+				Frame[froute_index].changed = text_change;
+				//
+				int route_id = Find_RouteIndex(0);
+				if (route_id>=0) Frame[finfor].text = &Route[route_id].infor[0];
+				else Frame[finfor].text = NULL;
+			}
+		}
+	}
 	Redraw();
 }
-void Find_BusName(int id)
+int Find_RouteIndex(int id)
 {
-	bool found=false;
+	int route_selected=-1;
+	for (int i=0;i<Route_Max;i++)
+	{
+		if(Route[i].route_no[0] == 0) break;
+		if(Compare2array(Route[i].route_no,Bus[id].route_no))
+		{
+			route_selected = i;
+			break;
+		}
+	}
+	return route_selected;
+}
+//return route index
+int Find_BusName(int id)
+{
+	int route_selected=-1;
 	char *p,*p1;
 	for (int i=0;i<Route_Max;i++)
 	{
-		if(Route[i].route_no == 0) break;
+		if(Route[i].route_no[0] == 0) break;
 		if(Compare2array(Route[i].route_no,Bus[id].route_no))
 		{
-			found = true;
+			route_selected = i;
 			memcpy(Bus[id].bus_name,Route[i].routeName,sizeof(Bus[id].bus_name)-1);
 			p = &Bus[id].bus_name[0];
 			p1 = strchr(p,'\0');
 			memcpy(p1," - BS Xe: ",10); p1 += 10;
 			memcpy(p1,Bus[id].car_no,sizeof(Bus[id].car_no));
-			Bus[id].bus_name[sizeof(Bus[id].bus_name)-1] = 0;			
+			Bus[id].bus_name[sizeof(Bus[id].bus_name)-1] = 0;
+			break;			
 		}
 	}
-	if (!found) memcpy(Bus[id].bus_name,Bus[id].car_no,sizeof(Bus[id].car_no)-1);
+	if (route_selected<0) memcpy(Bus[id].bus_name,Bus[id].car_no,sizeof(Bus[id].car_no)-1);
+	return route_selected;
 }
 void Get_BusInfor_from_buffer1()
 {
@@ -1030,7 +1047,7 @@ void Get_BusConfig_from_buffer()
 		if (bisNew_Config) //return;
 		{
 			for (int i=0;i<Frame_Max;i++)
-			{
+			{				
 				// check_mem_free();
 				// debugSerial.println("begin");
 				// debugSerial.flush();
@@ -1047,6 +1064,7 @@ void Get_BusConfig_from_buffer()
 					Frame[i].changed |= color_change;
 				}
 				//
+				configInfor[i].text[0] = 0;
 				sprintf(buf,"\"s%d\"",i+1);
 				p = strstr(comm_buffer,buf);
 				if (p==NULL) continue;
@@ -1054,14 +1072,16 @@ void Get_BusConfig_from_buffer()
 				p = strchr(p1,'"');
 				if (p==NULL) continue;
 				*p = 0;
+				memcpy(configInfor[i].text,p1,p-p1+1);
 				if (i == finfor)
 				{
-					if (p = p1) disp_infor[0] = 0;
+					if (p = p1) {disp_infor[0] = 0; bisCommonInfor = false;}
 					else if (Compare2array(p1,&disp_infor[0]) == false)
 					{
+						bisCommonInfor =  true;
 						memcpy(&disp_infor[0],p1,sizeof(disp_infor)-1);
-						Frame[i].text = &disp_infor[0];
-						Frame[i].changed |= text_change;
+						Frame[finfor].text = &disp_infor[0];
+						Frame[finfor].changed |= text_change;
 					}
 				}
 				else if (i<frow1_c1)
@@ -1075,6 +1095,17 @@ void Get_BusConfig_from_buffer()
 				*p = '"';
 			}
 			
+		}
+		//neu khong hien thi tuyen gan den hoac hien thi thong tin chung thi hien thi thong tin Full width
+		if (bisCommonInfor || Frame[froute_index].color == BLACK)
+		{
+			Frame[froute_index].w = 0;
+			Frame[finfor].x = 0;
+		}
+		else
+		{
+			Frame[froute_index].w = 22;
+			Frame[finfor].x = 22;
 		}
 		Redraw();
 }
