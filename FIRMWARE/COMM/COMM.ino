@@ -9,6 +9,7 @@
 #include <ESP8266HTTPClient.h>
 #include <SoftwareSerial.h>
 #include <WiFiUdp.h>
+#include <ESP8266httpUpdate.h>
 
 
 #include <SPI.h>
@@ -97,7 +98,7 @@ SoftwareSerial swSer(5,4, false, 256); //RX, TX
 //#define End_Connection "End_Connection"
 #define CheckSum_Fail "CheckSum_Fail"
 #define CheckSize_Fail "CheckSize_Fail"
-
+#define cm_updatefromserver "ServerUpdate"
 #define isBusIdle 0
 #define isBusInfo 1
 #define isBusConfig 2
@@ -129,6 +130,8 @@ const char* update_password = "admin";
 //
 const char* password_ap = "13245768";
 
+const char *firmware_server_name ="http://n2k16.esy.es/esp_update/";
+const char *check4update = "check4update.php";
 
 char *sketch_name ="xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx.ino";//
 char sketch_time[14];
@@ -171,6 +174,9 @@ bool bDateTime_OK = false;
 uint32_t unixTime_sent;
 uint32_t Unixtime_GMT7;
 uint32_t time_bk;
+uint32_t last_infor_OK_ts;
+bool bLostconnection;
+
 #define SECONDS_FROM_1970_TO_2000 946684800
 const uint8_t daysInMonth [] = { 31,28,31,30,31,30,31,31,30,31,30,31 };
 struct {
@@ -402,6 +408,7 @@ void setup() {
 //******************************************************************************************************
 
 void loop() {
+	if (firstScan) Update_Firmware_fromServer();
 	wdt_reset();
 	httpServer.handleClient();
 	
@@ -432,17 +439,17 @@ void loop() {
 	 int retry=3;
 		while (Comm_Infor == 0) 
 		{
-			Get_Infor();
+			if (Get_Infor()) {last_infor_OK_ts = millis(); bLostconnection =false;}
 			if (--retry<=0) break;
 			delay(1000);
-		}
-		if (Get_Error>=3) displaySerial.println(Set_LostConnection);
+		}				
 		if (Get_Error>=3 && EEData.Interface == from_Ethernet)
 		 {
 			 Get_Error=0;
 			 DEBUG_SERIAL("Reset Ethernet Shield\n");
 			 StartEthernet();
 		 }	 
+		 else if (Get_Error>=3) Get_Error=0;
 	 //Send_DateTime();
 	 while (Comm_Infor == isBusInfo) {
 		 Get_BusInfor_from_buffer();
@@ -508,6 +515,12 @@ void loop() {
 	 }
 	 if (Comm_Infor>0) Comm_Infor=0;
 	 lastGet_timeStamp = millis();
+}
+// check connection
+if (bLostconnection == false && millis() - last_infor_OK_ts > 120000) //2M
+{
+	bLostconnection = true;
+	displaySerial.println(Set_LostConnection);
 }
 //check config
 if (bDisplay_isRunning && millis()-lastCheckConfig_timeStamp>(EEData.time_checkconfig*1000)) 
@@ -1802,4 +1815,23 @@ bool Compare2array(char* p1,char* p2)
 	}
 	if (ret && *p2 != NULL) ret = false;
 	return ret;
+}
+void Update_Firmware_fromServer()
+{
+	String url = String(firmware_server_name) + String(check4update);
+	String sketch_time = getFlashTime();	 
+	wdt_reset();
+		if (ESPhttpUpdate.Check_new_Update(url,sketch_name,sketch_time))
+		{
+			wdt_reset();
+			DEBUG_SERIAL("New firmware found\n");
+			String update_url = String(firmware_server_name) + "bin/" + String(sketch_name) + ".bin";
+			t_httpUpdate_return ret = ESPhttpUpdate.update(update_url);
+			if (ret!=HTTP_UPDATE_OK)
+			{
+				DEBUG_SERIAL("Update fail....resetting\n");
+				ESP.reset();
+			}
+		}
+		else DEBUG_SERIAL("No update found\n");
 }

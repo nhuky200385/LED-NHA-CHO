@@ -92,11 +92,12 @@ bool pause;
 uint8_t auto_brightness;
 bool auto_adjust_brightness=true;
 bool bstartup;
+bool bDateTime_OK = false;
 //Hien thi thong tin chung
 char disp_infor[1003];
 bool bisCommonInfor;
 char waitData[]={"ĐANG KẾT NỐI ĐẾN SERVER, VUI LÒNG CHỜ!"};
-char lostConnection[]={"ĐANG KẾT NỐI ĐẾN SERVER"};
+char lostConnection[]={"MẤT KẾT NỐI ĐẾN SERVER"};
 char nobus[]={"HIỆN TẠI KHÔNG CÓ XE NÀO SẮP ĐẾN NHÀ CHỜ NÀY "};
 
 uint32_t Unixtime_GMT7;
@@ -561,7 +562,7 @@ void Scroll_process()
 		matrix.print_Rect(&Frame[3]);
 		}
 	} */
-	if (ml - flash_ts >= 500)
+	if (bDateTime_OK && ml - flash_ts >= 500)
 	{
 		b = true;
 		flash_ts= ml;
@@ -1149,7 +1150,7 @@ void Get_BusConfig_from_buffer()
 }
 void Get_Route_from_buffer()
 {
-	char*p, *p1;
+	char*p, *p1,*p2;
 	//char temprouteno[12];
 	int index = 0;
 	//"routeNo":"2","routeName":"Kim Liên - Chợ Hàn",
@@ -1211,11 +1212,21 @@ void Get_Route_from_buffer()
 	p1 = p + 1;
 	p = strstr(p1,"\"Luotdi"); //"Luotdi":"274 Nguyễn Văn Cừ (Hòa Hiệp Bắc) – 
 	if (p==NULL) return;
-	//p1 = strchr(p,':') + 2;
-	p1 = p;
-	p = strchr(p1,'}');
+	p1 = strchr(p,':') + 2;
+	//p1 = p;
+	p = strchr(p1,'"');
 	*p = 0;
-	memcpy(&Route[index].infor[0],p1,sizeof(Route[index].infor)-1);
+	//sprintf(&Route[index].infor[0],"LƯỢT ĐI: %s",p1);
+	p2 = p1;
+	//*p = '"';
+	p1 = p + 1;
+	p = strstr(p1,"\"Luotve"); //"Luotve":"Bạch Đằng (đối diện Chợ Hàn)
+	if (p==NULL) return;
+	p1 = strchr(p,':') + 2;
+	p = strchr(p1,'"');
+	*p = 0;
+	sprintf(&Route[index].infor[0],"TUYẾN %s - LƯỢT ĐI:  %s, LƯỢT VỀ:  %s.",Route[index].route_no,p2,p1);
+	//memcpy(&Route[index].infor[0],p1,sizeof(Route[index].infor)-1);
 	//debugSerial.print("lotrinh="); debugSerial.println(Route[index].infor);
 }
 void Get_DateTime_from_buffer()
@@ -1230,6 +1241,7 @@ void Get_DateTime_from_buffer()
 	//debugSerial.println("Time OK");
 	sprintf(comm_buffer,"Rcv Time: %d/%02d/%02d %02d:%02d:%02d",rtc.year, rtc.month,rtc.day,rtc.hour,rtc.minute,rtc.second);
 	debugSerial.println(comm_buffer);
+	bDateTime_OK = true;
 }
 void Get_Brightness()
 {
@@ -1406,7 +1418,8 @@ void ClearBusInfor()
 		memcpy(&Bus[i].car_no[0],"\0",sizeof(Bus[0].car_no)-1);
 		memcpy(&Bus[i].bus_name[0],"\0",sizeof(Bus[0].bus_name)-1);
 		memcpy(&Bus[i].time_arrival[0],"\0",sizeof(Bus[0].time_arrival)-1);
-	}	
+	}
+	for (int i = frow1_c1 ; i<=froute_index;i++) Frame[i].changed = all_change;
 	debugSerial.println("BusInfor Timeout");
 	Redraw();
 }
