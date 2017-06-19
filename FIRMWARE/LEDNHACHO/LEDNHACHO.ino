@@ -23,6 +23,7 @@
 #define End_Brightness "End_Brightness"
 #define CheckSum_Fail "CheckSum_Fail"
 #define CheckSize_Fail "CheckSize_Fail"
+#define Set_LostConnection "Set_Connection=0"
 #define Set_Frame "Frame="
 #define demo "TMF_demo="
 #define Set_Line "Line=" //Line=x,y x=line id, y=color
@@ -94,9 +95,9 @@ bool bstartup;
 //Hien thi thong tin chung
 char disp_infor[1003];
 bool bisCommonInfor;
-const char waitData[]={"ĐANG KẾT NỐI ĐẾN SERVER, VUI LÒNG CHỜ!"};
-const char lostConnection[]={"ĐANG KẾT NỐI ĐẾN SERVER"};
-const char nobus[]={"HIỆN TẠI KHÔNG CÓ XE NÀO SẮP ĐẾN NHÀ CHỜ NÀY "};
+char waitData[]={"ĐANG KẾT NỐI ĐẾN SERVER, VUI LÒNG CHỜ!"};
+char lostConnection[]={"ĐANG KẾT NỐI ĐẾN SERVER"};
+char nobus[]={"HIỆN TẠI KHÔNG CÓ XE NÀO SẮP ĐẾN NHÀ CHỜ NÀY "};
 
 uint32_t Unixtime_GMT7;
 #define SECONDS_FROM_1970_TO_2000 946684800
@@ -168,7 +169,7 @@ enum
 {
 	ftitle,
 	ftime,
-	froute,
+	froutecode,
 	froute_info,
 	ftime_arrival,
 	frow1_c1,frow1_c2,frow1_c3,
@@ -221,14 +222,14 @@ void Process_Serialbuffer(Stream& inStream)
 		inStream.print("Auto Set_brightness=");
 		inStream.println(auto_adjust_brightness);
 	}
-	else if (strstr(serial_buffer, Set_Frame))
+	/* else if (strstr(serial_buffer, Set_Frame))
 	{
 		p = strstr(serial_buffer, Set_Frame) + sizeof(Set_Frame) - 1;
 		Frame_Stype = atoi(p);
 		inStream.print(Set_Frame);
 		inStream.println(Frame_Stype);
 		Frame_Config();
-	}
+	} */
 	else if (strstr(serial_buffer, demo))
 	{
 		p = strstr(serial_buffer, demo) + sizeof(demo) - 1;
@@ -250,6 +251,16 @@ void Process_Serialbuffer(Stream& inStream)
 		inStream.println(color);
 		matrix.drawLine(Line[line_id].x0,Line[line_id].y0,Line[line_id].x1,Line[line_id].y1,Line[line_id].color);
 	}
+	else if (strstr(serial_buffer, Set_LostConnection))
+	{
+		if (Bus_count>0)
+		{
+			Bus_count = 0;
+			Frame[finfor].text = &lostConnection[0];
+			Frame[finfor].changed = text_change;
+			ClearBusInfor();
+		}
+	}
 }
 void CheckSerial()
 {
@@ -268,8 +279,8 @@ void Frame_Config()
 	Frame[ftitle] = {1,0,88,14,YELLOW,LEFT,&Tahoma_12B,&Tahoma_12BVN,&Header[0].text[0],false,-4,true}; //0
 	Frame[ftime] = {91,0,37,14,YELLOW,LEFT,&TahomaNumber_10B,NULL,&Header[1].text[0],false,-1}; //1
 	//
-	Frame[froute] = {0,16,42,15,RED,LEFT,&Tahoma_8B,&Tahoma_8BVN,&Header[2].text[0],false,0}; //2
-	Frame[froute_info] = {42,16,46,15,GREEN,CENTER,&Tahoma_8B,&Tahoma_8BVN,&Header[3].text[0],false,0}; //3
+	Frame[froutecode] = {0,16,42,15,RED,LEFT,&Tahoma_8B,&Tahoma_8BVN,&Header[2].text[0],false,0}; //2
+	Frame[froute_info] = {42,16,45,15,GREEN,CENTER,&Tahoma_8B,&Tahoma_8BVN,&Header[3].text[0],false,0}; //3
 	Frame[ftime_arrival] = {87,16,42,15,YELLOW,RIGHT,&Tahoma_8B,&Tahoma_8BVN,&Header[4].text[0],false,0}; //4
 	//
 	Frame[frow1_c1] = {1,31,22,15,RED,CENTER,&Tahoma_8B,&Tahoma_8BVN,&Bus[0].route_no[0],false,-1}; //5
@@ -285,7 +296,7 @@ void Frame_Config()
 	Frame[frow3_c3] = {96,61,32,15,YELLOW,RIGHT,&Tahoma_8B,NULL,&Bus[2].time_arrival[0],false,-1}; //13
 	
 	Frame[froute_index] = {0,76,0,24,RED,CENTER,&Tahoma_12B,&Tahoma_12BVN,&Bus[0].route_no[0],false,-1,false}; //14
-	Frame[finfor] = {0,76,106,24,GREEN,LEFT,&Tahoma_12,&Tahoma_12VN,&waitData[0],true,0,true}; //15
+	Frame[finfor] = {0,76,128,24,GREEN,LEFT,&Tahoma_12,&Tahoma_12VN,&waitData[0],true,0,true}; //15
 	//22 -> 0		
 			
 	station_ts = millis();
@@ -303,8 +314,9 @@ void Redraw()
 	bool isSync_Changed = false;
 	for (int i=0;i<Frame_Max;i++)
 	{
+		if (Frame[i].w == 0) continue;
 		if (Frame[i].isScroll && Frame[i].syncScroll)
-		{
+		{			
 			// debugSerial.print("changed: ");
 			// debugSerial.print(Frame[i].changed,HEX); debugSerial.print(", ");
 			// debugSerial.print(Frame[i].changed & text_change); debugSerial.print(", ");
@@ -315,6 +327,7 @@ void Redraw()
 	{
 		for (int i=0;i<Frame_Max;i++)
 		{
+			if (Frame[i].w == 0) continue;
 			if (Frame[i].isScroll && Frame[i].syncScroll)
 			{
 				Frame[i].changed |= text_change;
@@ -330,7 +343,7 @@ void Redraw()
 	for (int i=0;i<Frame_Max;i++)
 	{
 		if (Frame[i].w == 0) continue;
-		if (Frame[i].isScroll && i!=froute_index)
+		if (Frame[i].isScroll)
 		{
 			if (Frame[i].changed & text_change) //neu text thay doi
 			{
@@ -353,7 +366,7 @@ void Redraw()
 	{
 		for (int i=0;i<Frame_Max;i++)
 		{
-			if (Frame[i].isScroll && Frame[i].syncScroll && i!=froute_index)
+			if (Frame[i].isScroll && Frame[i].syncScroll)
 			{
 				Frame[i].scroll_length = scroll_max;
 			}
@@ -460,7 +473,7 @@ void loop() {
 		}
 	}
 	if (ml - last_update_infor_ts > update_info_timeout)
-	{		
+	{
 		if (Bus_count>0)
 		{
 			Bus_count = 0;
@@ -569,7 +582,7 @@ void Scroll_process()
 	{
 		for (int i=0;i<Frame_Max;i++)
 		{
-			if (Frame[i].w == 0) break;			
+			if (Frame[i].w == 0) continue;			
 			if (Frame[i].isScroll) matrix.print_Rect_scroll(&Frame[i]);
 			/* if (i==finfor)
 			{
@@ -837,7 +850,7 @@ void Get_BusInfor_from_buffer()
 		}
 		else
 		{
-			debugSerial.println("New Bus");
+			debugSerial.println("Bus Index changed");
 			Bus[id].changed = all_change;
 			Bus[id].visible = bus_temp.visible;
 			Bus[id].display_index = bus_temp.display_index;
@@ -879,17 +892,24 @@ next_:
 		Frame[index].text = &Bus[businfo_index + i].time_arrival[0]; Frame[index++].changed = (Bus[businfo_index + i].changed & time_change) > 0 ? text_change : no_change;
 		//debugSerial.println(Bus[businfo_index + i].changed,BIN);
 	}
-	if (!bisCommonInfor)
+	if (bisCommonInfor == false)
 	{
 		if (Bus_count == 0) Frame[finfor].text = &nobus[0];
 		else{
-			if (Compare2array(Frame[froute_index].text,Bus[0].route_no) == false)
+			if (Bus[0].changed == all_change)
 			{
-				Frame[froute_index].text = &Bus[0].route_no[0]
+				Frame[froute_index].text = &Bus[0].route_no[0];
 				Frame[froute_index].changed = text_change;
+				//change font to fix text len
+				if (Bus[0].route_no[1]>0) {Frame[froute_index].f = &Tahoma_8B; Frame[froute_index].fvn = &Tahoma_8BVN;}
+				else {Frame[froute_index].f = &Tahoma_12B; Frame[froute_index].fvn = &Tahoma_12BVN;}
 				//
 				int route_id = Find_RouteIndex(0);
-				if (route_id>=0) Frame[finfor].text = &Route[route_id].infor[0];
+				if (route_id>=0) 
+				{
+					Frame[finfor].text = &Route[route_id].infor[0];
+					Frame[finfor].changed |= text_change;
+				}
 				else Frame[finfor].text = NULL;
 			}
 		}
@@ -1075,16 +1095,32 @@ void Get_BusConfig_from_buffer()
 				memcpy(configInfor[i].text,p1,p-p1+1);
 				if (i == finfor)
 				{
-					if (p = p1) {disp_infor[0] = 0; bisCommonInfor = false;}
-					else if (Compare2array(p1,&disp_infor[0]) == false)
+					if (*p1 == 0) {
+						if (bisCommonInfor)
+						{
+							int route_id = Find_RouteIndex(0);
+							if (route_id>=0) 
+							{
+								Frame[finfor].text = &Route[route_id].infor[0];
+								Frame[finfor].changed |= text_change;
+								Frame[froute_index].changed |= text_change;
+							}
+							else Frame[finfor].text = NULL;
+						}
+						disp_infor[0] = 0; 
+						bisCommonInfor = false;
+						}
+					else //if (Compare2array(p1,&disp_infor[0]) == false)
 					{
+						debugSerial.println("bisCommonInfor");
 						bisCommonInfor =  true;
 						memcpy(&disp_infor[0],p1,sizeof(disp_infor)-1);
 						Frame[finfor].text = &disp_infor[0];
-						Frame[finfor].changed |= text_change;
+						Frame[finfor].changed |= text_change;						
+						debugSerial.println(disp_infor);
 					}
 				}
-				else if (i<frow1_c1)
+				else if (i<frow1_c1 && i != froute_info)
 				{
 					if (Compare2array(p1,Frame[i].text) == false)
 					{
@@ -1100,12 +1136,14 @@ void Get_BusConfig_from_buffer()
 		if (bisCommonInfor || Frame[froute_index].color == BLACK)
 		{
 			Frame[froute_index].w = 0;
-			Frame[finfor].x = 0;
+			Frame[finfor].x = Frame[froute_index].w;
+			Frame[finfor].w = 128 - Frame[froute_index].w;
 		}
 		else
 		{
 			Frame[froute_index].w = 22;
-			Frame[finfor].x = 22;
+			Frame[finfor].x = Frame[froute_index].w;
+			Frame[finfor].w = 128 - Frame[froute_index].w;
 		}
 		Redraw();
 }

@@ -92,7 +92,9 @@ SoftwareSerial swSer(5,4, false, 256); //RX, TX
 #define Begin_SetTime "Set_Time"
 #define End_SetTime "End_Time"
 #define Set_Brightness "Set_Brightness="
-#define End_Brightness "End_Brightness"
+//#define End_Brightness "End_Brightness"
+#define Set_LostConnection "Set_Connection=0"
+//#define End_Connection "End_Connection"
 #define CheckSum_Fail "CheckSum_Fail"
 #define CheckSize_Fail "CheckSize_Fail"
 
@@ -434,6 +436,7 @@ void loop() {
 			if (--retry<=0) break;
 			delay(1000);
 		}
+		if (Get_Error>=3) displaySerial.println(Set_LostConnection);
 		if (Get_Error>=3 && EEData.Interface == from_Ethernet)
 		 {
 			 Get_Error=0;
@@ -568,7 +571,7 @@ void Wifi_Server()
   if (wServer.hasClient()){
 	wdt_reset();
 	wificlient = wServer.available();
-	DEBUG_SERIAL("wificlient hasClient");
+	DEBUG_SERIAL("wificlient connected\n");
     }
 	if (wificlient && wificlient.available())
 	{
@@ -760,6 +763,7 @@ void Reset_Bus()
 	unixTime_sent = 0;
 	Config_sent = false;
 	last_ConfigTime = 0;
+	lastGet_timeStamp = 0;
 }
 bool Get_Config()
 {
