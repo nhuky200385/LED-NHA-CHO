@@ -25,7 +25,7 @@
 #define CheckSize_Fail "CheckSize_Fail"
 #define Set_LostConnection "Set_Connection=0"
 #define Set_Frame "Frame="
-#define demo "TMF_demo="
+//#define demo "TMF_demo="
 #define Set_Line "Line=" //Line=x,y x=line id, y=color
 
 #define isBusIdle 0
@@ -37,7 +37,6 @@
 #define isBusRoute 6
 
 uint8_t State=1;
-uint8_t TMF_demo=0;
 
 uint8_t Comm_Infor=0;
 uint32_t timeout;
@@ -231,14 +230,14 @@ void Process_Serialbuffer(Stream& inStream)
 		inStream.println(Frame_Stype);
 		Frame_Config();
 	} */
-	else if (strstr(serial_buffer, demo))
+	/* else if (strstr(serial_buffer, demo))
 	{
 		p = strstr(serial_buffer, demo) + sizeof(demo) - 1;
 		TMF_demo = atoi(p);
 		inStream.print(demo);
 		inStream.println(TMF_demo);
 		bstartup = true;
-	}
+	} */
 	else if (strstr(serial_buffer, Set_Line))
 	{
 		p = strstr(serial_buffer, Set_Line) + sizeof(Set_Line) - 1;

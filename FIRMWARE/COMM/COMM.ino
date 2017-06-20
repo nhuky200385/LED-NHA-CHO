@@ -11,6 +11,7 @@
 #include <WiFiUdp.h>
 #include <ESP8266httpUpdate.h>
 
+#include "PubSubClient.h"
 
 #include <SPI.h>
 #include <Ethernet.h>
@@ -119,6 +120,19 @@ DeviceAddress insideThermometer;
 int DeviceCount;
 float current_Temp;
 
+String command_topic = ""; //xem trong setup()
+String status_topic = "";
+String topic = "";
+String payload = "";
+
+uint32_t mqtt_timestamp;
+WiFiClient mqttclient;
+String mqttServerName = "m20.cloudmqtt.com";            // for cloud broker - by hostname, from CloudMQTT account data
+int    mqttport = 14409;                                // default 1883, but CloudMQTT.com use other, for example: 13191, 23191 (SSL), 33191 (WebSockets) - use from CloudMQTT account data
+String mqttuser =  "test";                              // from CloudMQTT account data
+String mqttpass =  "test";                              // from CloudMQTT account data
+PubSubClient psclient(mqttclient, mqttServerName, mqttport); // for cloud broker - by hostname
+
 uint8_t Comm_Infor=0;
 uint8_t Comm_Error=0;
 uint8_t Get_Error=0;
@@ -130,7 +144,7 @@ const char* update_password = "admin";
 //
 const char* password_ap = "13245768";
 
-const char *firmware_server_name ="http://n2k16.esy.es/esp_update/";
+const char *firmware_server_name ="http://n2k16.esy.es/bus/";
 const char *check4update = "check4update.php";
 
 char *sketch_name ="xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx.ino";//
@@ -221,21 +235,32 @@ byte Bus_sort[Bus_Max];
 
 void Read_Config(bool bdefault = false);
 uint8_t Send_BusConfig(bool isfrom_buffer = false);
+void printConfig(bool ismqttPub = false);
 
-
-void printConfig()
+void printConfig(bool ismqttPub)
 {
-	DEBUG_SERIAL("host=%s\n",EEData.host);
-	DEBUG_SERIAL("port=%d\n",EEData.port);
-	DEBUG_SERIAL("infor_arg=%s\n",EEData.infor_arg);
-	DEBUG_SERIAL("config_arg=%s\n",EEData.config_arg);
-	DEBUG_SERIAL("route_arg=%s\n",EEData.route_arg);
-	DEBUG_SERIAL("BusStopNo=%s\n",EEData.BusStopNo);
-	DEBUG_SERIAL("EthernetIP=%d.%d.%d.%d\n",EEData.ethIP[0],EEData.ethIP[1],EEData.ethIP[2],EEData.ethIP[3]);
-	DEBUG_SERIAL("%s%s\n",Set_Interface,EEData.Interface == from_Ethernet ? "Ethernet" : "WIFI");
-	DEBUG_SERIAL("%s%s,%s\n",Set_Wifi,EEData.WiFi_Name,EEData.WiFi_Pass);
-	DEBUG_SERIAL("time_getInfor=%ds\n",EEData.time_getInfor);
-	DEBUG_SERIAL("time_checkconfig=%ds\n",EEData.time_checkconfig);
+	sprintf(tempbuffer,"host=%s\n",EEData.host);
+    if (!ismqttPub) {DEBUG_SERIAL(tempbuffer);} else pubStatus(tempbuffer);
+	sprintf(tempbuffer,"port=%d\n",EEData.port);
+    if (!ismqttPub) {DEBUG_SERIAL(tempbuffer);} else pubStatus(tempbuffer);
+	sprintf(tempbuffer,"infor_arg=%s\n",EEData.infor_arg);
+    if (!ismqttPub) {DEBUG_SERIAL(tempbuffer);} else pubStatus(tempbuffer);
+	sprintf(tempbuffer,"config_arg=%s\n",EEData.config_arg);
+    if (!ismqttPub) {DEBUG_SERIAL(tempbuffer);} else pubStatus(tempbuffer);
+	sprintf(tempbuffer,"route_arg=%s\n",EEData.route_arg);
+    if (!ismqttPub) {DEBUG_SERIAL(tempbuffer);} else pubStatus(tempbuffer);
+	sprintf(tempbuffer,"BusStopNo=%s\n",EEData.BusStopNo);
+    if (!ismqttPub) {DEBUG_SERIAL(tempbuffer);} else pubStatus(tempbuffer);	
+	sprintf(tempbuffer,"EthernetIP=%d.%d.%d.%d\n",EEData.ethIP[0],EEData.ethIP[1],EEData.ethIP[2],EEData.ethIP[3]);
+    if (!ismqttPub) {DEBUG_SERIAL(tempbuffer);} else pubStatus(tempbuffer);
+	sprintf(tempbuffer,"%s%s\n",Set_Interface,EEData.Interface == from_Ethernet ? "Ethernet" : "WIFI");
+    if (!ismqttPub) {DEBUG_SERIAL(tempbuffer);} else pubStatus(tempbuffer);
+	sprintf(tempbuffer,"%s%s,%s\n",Set_Wifi,EEData.WiFi_Name,EEData.WiFi_Pass);
+    if (!ismqttPub) {DEBUG_SERIAL(tempbuffer);} else pubStatus(tempbuffer);
+	sprintf(tempbuffer,"time_getInfor=%ds\n",EEData.time_getInfor);
+    if (!ismqttPub) {DEBUG_SERIAL(tempbuffer);} else pubStatus(tempbuffer);
+	sprintf(tempbuffer,"time_checkconfig=%ds\n",EEData.time_checkconfig);
+    if (!ismqttPub) {DEBUG_SERIAL(tempbuffer);} else pubStatus(tempbuffer);
 }
 void Read_Config(bool bdefault)
 {
@@ -361,6 +386,9 @@ void setup() {
   sprintf(chipID, "BUS_%06X", ESP.getChipId());
   DEBUG_SERIAL("chipID=%s\n",String(chipID).c_str());
   mac[sizeof(mac)-1] = ESP.getChipId() % 200;
+  
+  command_topic = "/BusStop/" + String(chipID) + "/control";
+  status_topic = "/BusStop/" + String(chipID) + "/status";
 
   display_Running_Sketch();
   
@@ -534,6 +562,8 @@ if (bDisplay_isRunning && millis()-lastCheckConfig_timeStamp>(EEData.time_checkc
  Check_udp_packet();
  //
  firstScan=false;
+ 
+ Process_MQTT();
 }
 void DebugFromDisplay()
 {	int n = 0;
@@ -604,7 +634,7 @@ void Check_udp_packet()
     // read the packet into packetBufffer
     int len = udp.read(tempbuffer, sizeof(tempbuffer));
     if (len > 0) {
-      tempbuffer[len+1] = 0;
+      tempbuffer[len] = 0;
 	  wdt_reset();
     }
     DEBUG_SERIAL("%s\n",String(tempbuffer).c_str());
@@ -742,6 +772,10 @@ void Process_Com_buffer()
 		{			
 			printConfig();
 		}
+		else if (strstr(com_buffer, cm_updatefromserver))
+		{			
+			Update_Firmware_fromServer();
+		}
 		else
 		{
 			displaySerial.write(com_buffer,com_buffer_len);
@@ -854,6 +888,9 @@ bool GET_Config_from_Ethernet()
   }
   else {
     DEBUG_SERIAL("connection failed\n");
+	sprintf(tempbuffer,"connection failed\n");
+   DEBUG_SERIAL(tempbuffer);
+   pubStatus(tempbuffer);
 	Get_Error +=1;
   }
   Eclient.stop();
@@ -896,6 +933,9 @@ bool GET_Infor_from_Ethernet()
   }
   else {
     DEBUG_SERIAL("connection failed\n");
+	sprintf(tempbuffer,"connection failed\n");
+   DEBUG_SERIAL(tempbuffer);
+   pubStatus(tempbuffer);
 	Get_Error +=1;
   }
   Eclient.stop();
@@ -931,6 +971,9 @@ bool GET_Route_from_Ethernet(char* routeNo)
   }
   else {
     DEBUG_SERIAL("connection failed\n");
+	sprintf(tempbuffer,"connection failed\n");
+   DEBUG_SERIAL(tempbuffer);
+   pubStatus(tempbuffer);
 	Get_Error +=1;
   }
   Eclient.stop();
@@ -1049,7 +1092,10 @@ bool GET_Config_from_Wifi()
 	}
   }
   else {
-    DEBUG_SERIAL("connection failed\n");
+    //DEBUG_SERIAL("connection failed\n");
+	sprintf(tempbuffer,"connection failed\n");
+   DEBUG_SERIAL(tempbuffer);
+   pubStatus(tempbuffer);
 	Get_Error +=1;
   }
   client1.stop();
@@ -1099,6 +1145,9 @@ bool GET_Infor_from_Wifi()
   }
   else {
     DEBUG_SERIAL("connection failed\n");
+	sprintf(tempbuffer,"connection failed\n");
+   DEBUG_SERIAL(tempbuffer);
+   pubStatus(tempbuffer);
 	Get_Error +=1;
   }
   client1.stop();
@@ -1142,6 +1191,9 @@ bool GET_Route_from_Wifi(char *routeNo)
   }
   else {
     DEBUG_SERIAL("connection failed\n");
+	sprintf(tempbuffer,"connection failed\n");
+   DEBUG_SERIAL(tempbuffer);
+   pubStatus(tempbuffer);
 	Get_Error +=1;
   }
   client1.stop();
@@ -1446,24 +1498,35 @@ uint8_t Send_data2display(const char* begin,const char* end)
 		  tempbuffer[n++] = c;
 		  tempbuffer[n] = 0;		  
 		  if (strstr(tempbuffer, end)) {
-		   step = 3;		   
-		   DEBUG_SERIAL("Send %s OK\n",begin);
+		   step = 3;	
+		   //DEBUG_SERIAL("Send %s OK\n",begin);)
+		   sprintf(tempbuffer,"Send %s OK\n",begin);
+		   DEBUG_SERIAL(tempbuffer);
+		   pubStatus(tempbuffer);
 		   break;
 		  }
 		  else if (strstr(tempbuffer, CheckSize_Fail)) {
-		   DEBUG_SERIAL("%s\n",CheckSize_Fail);
+		   //DEBUG_SERIAL("%s\n",CheckSize_Fail);
+		   sprintf(tempbuffer,"%s\n",CheckSize_Fail);
+		   DEBUG_SERIAL(tempbuffer);
+		   pubStatus(tempbuffer);
 		   break;
 		  }
 		  else if (strstr(tempbuffer, CheckSum_Fail)) {
-		   DEBUG_SERIAL("%s\n",CheckSum_Fail);
+		   //DEBUG_SERIAL("%s\n",CheckSum_Fail);
+		   sprintf(tempbuffer,"%s\n",CheckSum_Fail);
+		   DEBUG_SERIAL(tempbuffer);
+		   pubStatus(tempbuffer);
 		   break;
 		  }
 		}
 	  } while (millis() - t < timeout);
   }
   if (step == 3) break;
-  DEBUG_SERIAL("Step=%d, Send %s Failed\n",step,begin);
-  DEBUG_SERIAL("tempbuffer=%s\n",tempbuffer);
+  sprintf(tempbuffer,"Step=%d, Send %s Failed\n",step,begin);
+  //DEBUG_SERIAL("Step=%d, Send %s Failed\n",step,begin);
+  DEBUG_SERIAL(tempbuffer);
+  pubStatus(tempbuffer);
   if (retry>0)
   {
 	  delay(100);
@@ -1824,7 +1887,7 @@ void Update_Firmware_fromServer()
 		if (ESPhttpUpdate.Check_new_Update(url,sketch_name,sketch_time))
 		{
 			wdt_reset();
-			DEBUG_SERIAL("New firmware found\n");
+			DEBUG_SERIAL("New firmware found, updating...\n");
 			String update_url = String(firmware_server_name) + "bin/" + String(sketch_name) + ".bin";
 			t_httpUpdate_return ret = ESPhttpUpdate.update(update_url);
 			if (ret!=HTTP_UPDATE_OK)
@@ -1834,4 +1897,75 @@ void Update_Firmware_fromServer()
 			}
 		}
 		else DEBUG_SERIAL("No update found\n");
+}
+void Process_MQTT()
+{
+	if (WiFi.status() == WL_CONNECTED) {
+
+    if (!psclient.connected() && (millis() - mqtt_timestamp>20000)) {
+
+      bool success;
+	  wdt_reset();
+      if (mqttuser.length() > 0) {
+        success = psclient.connect( MQTT::Connect( String(chipID) ).set_auth(mqttuser, mqttpass) );
+      } else {
+        success = psclient.connect( String(chipID) );
+      }
+	  mqtt_timestamp=millis();
+      if (success) {
+		DEBUG_SERIAL("Connected to %s\n",mqttServerName.c_str());
+        psclient.set_callback(onMessageArrived);
+
+        psclient.subscribe(command_topic);
+		pubStatus("HELLO");
+
+      } else {
+
+        //debugSerial.println("Connect to MQTT server: FAIL");
+        //delay(1000);
+      }
+    }
+
+    if (psclient.connected()) {
+      psclient.loop();
+    }
+  }
+  yield();
+}
+void pubStatus( char* payload) {
+	pubStatus(String(payload));
+}
+void pubStatus( String payload) {
+
+if (!psclient.connected()) return;
+  if (psclient.publish(status_topic, payload)) {
+    //debugSerial.println("Publish new status for " + t + ", value: " + payload);
+  } else {
+    //debugSerial.println("Publish new status for " + t + " FAIL!");
+  }
+}
+
+void onMessageArrived(const MQTT::Publish& sub) {
+
+  topic = sub.topic();
+  payload = sub.payload_string();
+  //DEBUG_SERIAL("topic=%s\npayload=%s\n",topic.c_str(),payload.c_str());
+  DEBUG_SERIAL("from MQTT payload=%s\n",payload.c_str());
+  
+  if (payload.equalsIgnoreCase(String(cm_updatefromserver)))
+	{
+		pubStatus("Check update from Server");
+		Update_Firmware_fromServer();
+	}
+	else if (payload.equalsIgnoreCase(String(Show_Config)))
+	{
+		printConfig(true);
+	}
+	else if (payload.equalsIgnoreCase("???"))
+	{
+		IPAddress ip = WiFi.localIP();
+	    if (WiFi.status() != WL_CONNECTED) ip = WiFi.softAPIP();
+		sprintf(tempbuffer,"chipID=%s\nSketch=%s\nCompiled on=%s %s\nWiFi IP: %d.%d.%d.%d\n", chipID,String(sketch_name).c_str(),__DATE__,__TIME__,ip[0],ip[1],ip[2],ip[3]);
+		pubStatus(tempbuffer);
+	}
 }
