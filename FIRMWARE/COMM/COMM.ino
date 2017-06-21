@@ -122,6 +122,7 @@ float current_Temp;
 
 String command_topic = ""; //xem trong setup()
 String status_topic = "";
+String broadcast_topic = "/BusStop";
 String topic = "";
 String payload = "";
 
@@ -1952,6 +1953,7 @@ void Process_MQTT()
         psclient.set_callback(onMessageArrived);
 
         psclient.subscribe(command_topic);
+		psclient.subscribe(broadcast_topic);
 		//
 		SketchInfor2tempbuffer();
 		pubStatus(tempbuffer);
@@ -1989,9 +1991,16 @@ void onMessageArrived(const MQTT::Publish& sub) {
   //DEBUG_SERIAL("topic=%s\npayload=%s\n",topic.c_str(),payload.c_str());
   DEBUG_SERIAL("from MQTT payload=%s\n",payload.c_str());
   
-  if (topic != command_topic) return;
+  if (topic == broadcast_topic && payload == "???")
+  {
+	  SketchInfor2tempbuffer();
+  }
+  else if (topic == command_topic)
+  {
   payload.toCharArray(com_buffer, sizeof(com_buffer)-1);
   Process_Com_buffer(true);
+  }
+  else return;
   if (tempbuffer[0] > 0) pubStatus(tempbuffer);
   /* if (payload.equalsIgnoreCase(String(cm_updatefromserver)))
 	{
