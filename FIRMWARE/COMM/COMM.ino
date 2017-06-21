@@ -236,7 +236,14 @@ byte Bus_sort[Bus_Max];
 void Read_Config(bool bdefault = false);
 uint8_t Send_BusConfig(bool isfrom_buffer = false);
 void printConfig(bool ismqttPub = false);
+void Process_Com_buffer(bool isfrommqtt = false);
 
+void SketchInfor2tempbuffer()
+{
+	IPAddress ip = WiFi.localIP();
+	if (WiFi.status() != WL_CONNECTED) ip = WiFi.softAPIP();
+	sprintf(tempbuffer,"chipID=%s\nSketch=%s\nCompiled on=%s %s\nWiFi IP: %d.%d.%d.%d\n", chipID,String(sketch_name).c_str(),__DATE__,__TIME__,ip[0],ip[1],ip[2],ip[3]);	
+}
 void printConfig(bool ismqttPub)
 {
 	sprintf(tempbuffer,"host=%s\n",EEData.host);
@@ -436,7 +443,7 @@ void setup() {
 //******************************************************************************************************
 
 void loop() {
-	if (firstScan) Update_Firmware_fromServer();
+	//if (firstScan) Update_Firmware_fromServer();
 	wdt_reset();
 	httpServer.handleClient();
 	
@@ -575,6 +582,7 @@ void DebugFromDisplay()
 		tempbuffer[n] = 0;
 	}
 	if (n>0) DEBUG_SERIAL(tempbuffer);
+	if (n>5) pubStatus(tempbuffer);
 }
 bool Get_DateTimefrom_buffer()
 {
@@ -641,22 +649,21 @@ void Check_udp_packet()
 		//Send to back udp server	 
 	if (strstr(tempbuffer,"???") != NULL)
 	{
-		IPAddress ip = WiFi.localIP();
-	    if (WiFi.status() != WL_CONNECTED) ip = WiFi.softAPIP();
-		sprintf(tempbuffer,"chipID=%s\nSketch=%s\nCompiled on=%s %s\nWiFi IP: %d.%d.%d.%d\n", chipID,String(sketch_name).c_str(),__DATE__,__TIME__,ip[0],ip[1],ip[2],ip[3]);
+		SketchInfor2tempbuffer();
 		udp.beginPacket(remoteIp, udp.remotePort());
 		udp.print(tempbuffer);
 		udp.endPacket();
 	}
   }
 }
-void Process_Com_buffer()
+void Process_Com_buffer(bool isfrommqtt)
 {
 	char* p,*p1;
 	//loai \r\n neu co
 	p = strchr(com_buffer,'\r');
 	if (p) *p = 0;
 	p = strchr(com_buffer,'\n');
+	tempbuffer[0] = 0;
 	if (p) *p = 0;
 		if (strstr(com_buffer,Set_busStop))
 		{
@@ -665,7 +672,8 @@ void Process_Com_buffer()
 			if (p1) *p1 = 0;
 			memcpy(EEData.BusStopNo,p,sizeof(EEData.BusStopNo));
 			lastGet_timeStamp = 0;
-			DEBUG_SERIAL("%s%s\n",Set_busStop,EEData.BusStopNo);
+			sprintf(tempbuffer,"%s%s\n",Set_busStop,EEData.BusStopNo);
+			DEBUG_SERIAL(tempbuffer);
 			Save_Config();
 		}
 		else if (strstr(com_buffer, Set_Interface))
@@ -673,7 +681,8 @@ void Process_Com_buffer()
 			p = strstr(com_buffer, Set_Interface) + sizeof(Set_Interface) - 1;
 			EEData.Interface = atoi(p);
 			lastGet_timeStamp = 0;
-			DEBUG_SERIAL("%s%s\n",Set_Interface,EEData.Interface == from_Ethernet ? "Ethernet" : "WIFI");
+			sprintf(tempbuffer,"%s%s\n",Set_Interface,EEData.Interface == from_Ethernet ? "Ethernet" : "WIFI");
+			DEBUG_SERIAL(tempbuffer);
 			Save_Config();
 		}
 		else if (strstr(com_buffer,Set_Wifi))
@@ -687,7 +696,8 @@ void Process_Com_buffer()
 			p1 = strchr(p,'\r');
 			if (p1) *p1 = 0;
 			memcpy(EEData.WiFi_Pass,p,sizeof(EEData.WiFi_Pass));
-			DEBUG_SERIAL("%s%s,%s\n",Set_Wifi,EEData.WiFi_Name,EEData.WiFi_Pass);
+			sprintf(tempbuffer,"%s%s,%s\n",Set_Wifi,EEData.WiFi_Name,EEData.WiFi_Pass);
+			DEBUG_SERIAL(tempbuffer);
 			Save_Config();
 			SetupWifi();
 		}
@@ -707,7 +717,8 @@ void Process_Com_buffer()
 			if (p1==NULL) return; p=p1;
 			ip[3] = atoi(p);
 			EEData.ethIP = ip;			
-			DEBUG_SERIAL("%s%d.%d.%d.%d\n",Set_EthIP,EEData.ethIP[0],EEData.ethIP[1],EEData.ethIP[2],EEData.ethIP[3]);
+			sprintf(tempbuffer,"%s%d.%d.%d.%d\n",Set_EthIP,EEData.ethIP[0],EEData.ethIP[1],EEData.ethIP[2],EEData.ethIP[3]);
+			DEBUG_SERIAL(tempbuffer);
 			Save_Config();
 			StartEthernet();
 		}
@@ -749,36 +760,49 @@ void Process_Com_buffer()
 			}while (true);
 			Save_Config();
 			printConfig();
+			if (isfrommqtt) printConfig(true);
+			tempbuffer[0] = 0;
 		}
 		else if (strstr(com_buffer, Set_time_getInfor))
 		{
 			p = strstr(com_buffer, Set_time_getInfor) + sizeof(Set_time_getInfor) - 1;
 			EEData.time_getInfor = atoi(p);
-			DEBUG_SERIAL("%s%ds\n",Set_time_getInfor,EEData.time_getInfor);
+			sprintf(tempbuffer,"%s%ds\n",Set_time_getInfor,EEData.time_getInfor);
+			DEBUG_SERIAL(tempbuffer);
 			Save_Config();
 		}
 		else if (strstr(com_buffer, Set_time_checkconfig))
 		{
 			p = strstr(com_buffer, Set_time_checkconfig) + sizeof(Set_time_checkconfig) - 1;
 			EEData.time_checkconfig = atoi(p);
-			DEBUG_SERIAL("%s%ds\n",Set_time_checkconfig,EEData.time_checkconfig);
+			sprintf(tempbuffer,"%s%ds\n",Set_time_checkconfig,EEData.time_checkconfig);
+			DEBUG_SERIAL(tempbuffer);
 			Save_Config();
 		}
 		else if (strstr(com_buffer, Set_Default))
 		{			
 			Read_Config(true);
+			if (isfrommqtt) printConfig(true);
+			tempbuffer[0] = 0;
 		}
 		else if (strstr(com_buffer, Show_Config))
-		{			
-			printConfig();
+		{
+			printConfig(isfrommqtt);
+			tempbuffer[0] = 0;
 		}
 		else if (strstr(com_buffer, cm_updatefromserver))
 		{			
 			Update_Firmware_fromServer();
+			tempbuffer[0] = 0;
+		}
+		else if (strstr(com_buffer,"???") != NULL)
+		{
+			SketchInfor2tempbuffer();
 		}
 		else
 		{
 			displaySerial.write(com_buffer,com_buffer_len);
+			tempbuffer[0] = 0;
 		}
 }
 void Reset_Bus()
@@ -1384,7 +1408,10 @@ uint8_t Check_display_Running()
   if (!ret) Comm_Error += 1;
   if (n==0) 
   {
-	  DEBUG_SERIAL("[DISPLAY] NOT Response\n");
+	  //DEBUG_SERIAL("[DISPLAY] NOT Response\n");
+	sprintf(tempbuffer,"[DISPLAY] NOT Response\n");
+    DEBUG_SERIAL(tempbuffer);
+	pubStatus(tempbuffer);
 	  if (millis()<10000) Comm_Error = 10; //Reset display
   }
   return Comm_Error;
@@ -1419,7 +1446,7 @@ uint8_t Send_data2display(const char* begin,const char* end)
 	p1 =strchr(data_buffer,']');
   if (p==NULL || p1==NULL)
   {
-	  DEBUG_SERIAL("%s Not OK\n",begin);
+	  DEBUG_SERIAL("%s Invalid\n",begin);
 	 return 0;
   }
   int size = (p1 - p) + 1;
@@ -1500,7 +1527,7 @@ uint8_t Send_data2display(const char* begin,const char* end)
 		  if (strstr(tempbuffer, end)) {
 		   step = 3;	
 		   //DEBUG_SERIAL("Send %s OK\n",begin);)
-		   sprintf(tempbuffer,"Send %s OK\n",begin);
+		   sprintf(tempbuffer,"Send %s Done\n",begin);
 		   DEBUG_SERIAL(tempbuffer);
 		   pubStatus(tempbuffer);
 		   break;
@@ -1887,7 +1914,10 @@ void Update_Firmware_fromServer()
 		if (ESPhttpUpdate.Check_new_Update(url,sketch_name,sketch_time))
 		{
 			wdt_reset();
-			DEBUG_SERIAL("New firmware found, updating...\n");
+			sprintf(tempbuffer,"New firmware found, updating...\n");
+			pubStatus(tempbuffer);
+			DEBUG_SERIAL(tempbuffer);
+			
 			String update_url = String(firmware_server_name) + "bin/" + String(sketch_name) + ".bin";
 			t_httpUpdate_return ret = ESPhttpUpdate.update(update_url);
 			if (ret!=HTTP_UPDATE_OK)
@@ -1896,7 +1926,12 @@ void Update_Firmware_fromServer()
 				ESP.reset();
 			}
 		}
-		else DEBUG_SERIAL("No update found\n");
+		else
+		{
+			sprintf(tempbuffer,"No Update found\n");
+			pubStatus(tempbuffer);
+			DEBUG_SERIAL(tempbuffer);
+		}
 }
 void Process_MQTT()
 {
@@ -1917,7 +1952,9 @@ void Process_MQTT()
         psclient.set_callback(onMessageArrived);
 
         psclient.subscribe(command_topic);
-		pubStatus("HELLO");
+		//
+		SketchInfor2tempbuffer();
+		pubStatus(tempbuffer);
 
       } else {
 
@@ -1952,7 +1989,11 @@ void onMessageArrived(const MQTT::Publish& sub) {
   //DEBUG_SERIAL("topic=%s\npayload=%s\n",topic.c_str(),payload.c_str());
   DEBUG_SERIAL("from MQTT payload=%s\n",payload.c_str());
   
-  if (payload.equalsIgnoreCase(String(cm_updatefromserver)))
+  if (topic != command_topic) return;
+  payload.toCharArray(com_buffer, sizeof(com_buffer)-1);
+  Process_Com_buffer(true);
+  if (tempbuffer[0] > 0) pubStatus(tempbuffer);
+  /* if (payload.equalsIgnoreCase(String(cm_updatefromserver)))
 	{
 		pubStatus("Check update from Server");
 		Update_Firmware_fromServer();
@@ -1963,9 +2004,11 @@ void onMessageArrived(const MQTT::Publish& sub) {
 	}
 	else if (payload.equalsIgnoreCase("???"))
 	{
-		IPAddress ip = WiFi.localIP();
-	    if (WiFi.status() != WL_CONNECTED) ip = WiFi.softAPIP();
-		sprintf(tempbuffer,"chipID=%s\nSketch=%s\nCompiled on=%s %s\nWiFi IP: %d.%d.%d.%d\n", chipID,String(sketch_name).c_str(),__DATE__,__TIME__,ip[0],ip[1],ip[2],ip[3]);
+		SketchInfor2tempbuffer();
 		pubStatus(tempbuffer);
 	}
+	else
+	{
+		pubStatus(payload);
+	} */
 }

@@ -431,7 +431,7 @@ void setup() {
 void loop() {
 	digitalWrite(OE_74HC245,State==1 ? LOW : HIGH);
 	long ml = millis();
-	if (ml - brightness_ts >=5000 )
+	if (ml - brightness_ts >=10000 )
 	{
 		// debugSerial.print("Position: ");
 		// debugSerial.print(Frame[6].scroll_position); debugSerial.print(", ");
