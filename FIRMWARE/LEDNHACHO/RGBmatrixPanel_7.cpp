@@ -213,7 +213,6 @@ void RGBmatrixPanel::print_Rect(const GFXfont *f,const GFXfont *fvn,char *s,uint
 	p=s;
 	draw_scrollbuffer = isScroll;
 	setyOffsetPlus(yOffsetPlus);
-	
 	if (align>0)
 	{
 		offset_calc = true;
@@ -225,13 +224,13 @@ void RGBmatrixPanel::print_Rect(const GFXfont *f,const GFXfont *fvn,char *s,uint
 				char ch = *p;
 				setFont(f);
 				if (toUpper) if (( ch >= 'a' ) && ( ch <= 'z' ))  ch &= 0xDF;
-				write(ch);				
+				write(ch);			
 			}
 			else if (*p == 0xE2) //E2 80 93
 			{
 				char ch = '-'; //0x2D
 				setFont(f);
-				if (toUpper) if (( ch >= 'a' ) && ( ch <= 'z' ))  ch &= 0xDF;
+				//if (toUpper) if (( ch >= 'a' ) && ( ch <= 'z' ))  ch &= 0xDF;
 				write(ch);
 				y = 2;
 			}
@@ -358,14 +357,15 @@ void RGBmatrixPanel::print_Rect(const GFXfont *f,const GFXfont *fvn,char *s,uint
 	{
 		if (*p <= 0x7F)
 		{
+			char ch = *p;
 			setFont(f);
-			write(*p);
+			if (toUpper) if (( ch >= 'a' ) && ( ch <= 'z' ))  ch &= 0xDF;
+			write(ch);
 		}
 		else if (*p == 0xE2) //E2 80 93
 		{
 			char ch = '-'; //0x2D
 			setFont(f);
-			if (toUpper) if (( ch >= 'a' ) && ( ch <= 'z' ))  ch &= 0xDF;
 			write(ch);
 			y = 2;
 		}
@@ -381,6 +381,7 @@ void RGBmatrixPanel::print_Rect(const GFXfont *f,const GFXfont *fvn,char *s,uint
 					{
 						if (VNFonts_C3[i].value == c2)
 						{
+							x_upper = VNFonts_C3[i].toUpper;
 							x = VNFonts_C3[i].offset; y=1; break;
 						}
 					}
@@ -391,6 +392,7 @@ void RGBmatrixPanel::print_Rect(const GFXfont *f,const GFXfont *fvn,char *s,uint
 					{
 						if (VNFonts_C46[i].value == c2)
 						{
+							x_upper = VNFonts_C46[i].toUpper;
 							x = VNFonts_C46[i].offset; y=1; break;
 						}
 					}
@@ -401,6 +403,7 @@ void RGBmatrixPanel::print_Rect(const GFXfont *f,const GFXfont *fvn,char *s,uint
 					{
 						if (VNFonts_C5[i].value == c2)
 						{
+							x_upper = VNFonts_C5[i].toUpper;
 							x = VNFonts_C5[i].offset; y=1; break;
 						}
 					}
@@ -414,6 +417,7 @@ void RGBmatrixPanel::print_Rect(const GFXfont *f,const GFXfont *fvn,char *s,uint
 						{
 							if (VNFonts_E1BA[i].value == c3)
 							{
+								x_upper = VNFonts_E1BA[i].toUpper;
 								x = VNFonts_E1BA[i].offset; break;
 							}
 						}
@@ -424,6 +428,7 @@ void RGBmatrixPanel::print_Rect(const GFXfont *f,const GFXfont *fvn,char *s,uint
 						{
 							if (VNFonts_E1BB[i].value == c3)
 							{
+								x_upper = VNFonts_E1BB[i].toUpper;
 								x = VNFonts_E1BB[i].offset; break;
 							}
 						}
@@ -434,12 +439,15 @@ void RGBmatrixPanel::print_Rect(const GFXfont *f,const GFXfont *fvn,char *s,uint
 						{
 							if (VNFonts_E1BBA0[i].value == c3)
 							{
+								x_upper = VNFonts_E1BBA0[i].toUpper;
 								x = VNFonts_E1BBA0[i].offset; break;
 							}
 						}
 					}
 				}
+				x_upper -=1;
 				x -=1; //vi VNFonts2 Offset tu 1 -> 0
+				if (toUpper) x = x_upper;
 				if (x>=0)
 				{
 					if (fvn != NULL)
@@ -535,7 +543,7 @@ void RGBmatrixPanel::print_Rect_scroll(frame_struct *fr)
 		{
 			char ch = '-'; //0x2D
 			setFont(fr->f);
-			if (fr->toUpper) if (( ch >= 'a' ) && ( ch <= 'z' ))  ch &= 0xDF;
+			//if (fr->toUpper) if (( ch >= 'a' ) && ( ch <= 'z' ))  ch &= 0xDF;
 			write(ch);
 			y = 2;
 		}
@@ -693,250 +701,9 @@ void RGBmatrixPanel::print_Rect(frame_struct *fr)
 {
 	if (fr->isScroll == true) return print_Rect_scroll(fr);
 	else return print_Rect(fr->f,fr->fvn,fr->text,fr->color,fr->x,fr->y,fr->w,fr->h,fr->align,fr->isScroll,fr->yOffsetPlus,fr->toUpper);
-	
-/* 	uint8_t align = fr.align;
-	int16_t x_new,x_draw;
-	int16_t x=0,y=0;
-	char c=0,c1,c2,c3;
-	uint16_t w=96,h=8;
-    char *p;
-	String  str="";
-	setFont(fr.f);
-	_rcolor=fr.color;
-	_rxoffset=fr.x;
-	_ryoffset=fr.y;
-	_rwidth = fr.w + _rxoffset;
-	_rheight = fr.h + _ryoffset;	
-	x_draw=_rxoffset;
-	rect_using=true;	
-	setTextColor(fr.color);
-	p=fr.text;
-	draw_scrollbuffer = fr.isScroll;
-	setyOffsetPlus(fr.yOffsetPlus);
-	if (align>0)
-	{
-		offset_calc = true;
-		setCursor(_rxoffset,_ryoffset);
-		while (*p != NULL)
-		{			
-			if (*p <= 0x7F)
-			{
-				setFont(fr.f);
-				write(*p);
-			}
-			else if (*p == 0xE2) //E2 80 93
-		{
-			char ch = '-'; //0x2D
-			setFont(fr->f);
-			if (fr->toUpper) if (( ch >= 'a' ) && ( ch <= 'z' ))  ch &= 0xDF;
-			write(ch);
-			y = 2;
-		}
-			else
-			{
-				c1 = *p;
-				c2 = *(p+1);
-				c3 = *(p+2);
-				x = -1; y = 0;
-				if (c1 == 0xC3)
-				{
-					for (int i=0;i<VNFonts_C3_Length;i++)
-					{
-						if (VNFonts_C3[i].value == c2)
-						{
-							x = VNFonts_C3[i].offset; y=1; break;
-						}
-					}
-				}
-				else if (c1 >= 0xC4 && c1 <= 0xC6)
-				{
-					for (int i=0;i<VNFonts_C456_Length;i++)
-					{
-						if (VNFonts_C456[i].value == c2)
-						{
-							x = VNFonts_C456[i].offset; y=1; break;
-						}
-					}
-				}
-				else if (c1 == 0xE1)
-				{
-					y=2;
-					if (c2 == 0xBA)
-					{
-						for (int i=0;i<VNFonts_E1BA_Length;i++)
-						{
-							if (VNFonts_E1BA[i].value == c3)
-							{
-								x = VNFonts_E1BA[i].offset; break;
-							}
-						}
-					}
-					else if (c2 == 0xBB && c3 <0xA0)
-					{
-						for (int i=0;i<VNFonts_E1BB_Length;i++)
-						{
-							if (VNFonts_E1BB[i].value == c3)
-							{
-								x = VNFonts_E1BB[i].offset; break;
-							}
-						}
-					}
-					else if (c2 == 0xBB && c3 >=0xA0)
-					{
-						for (int i=0;i<VNFonts_E1BBA0_Length;i++)
-						{
-							if (VNFonts_E1BBA0[i].value == c3)
-							{
-								x = VNFonts_E1BBA0[i].offset; break;
-							}
-						}
-					}
-				}
-				x -=1;
-				if (x>=0)
-				{
-					if (fr.fvn != NULL)
-					{
-						setFont(fr.fvn);
-						write(x + VNFonts_Offset);
-					}
-					else
-					{
-						write(VN2EN[x]);
-					}
-				}
-				p +=y;
-			}
-			p++;
-		}
-		w = getCursorX() - _rxoffset;
-		if (align == CENTER)
-		{
-			x_draw = (fr.w-w)/2 + _rxoffset;
-		}
-		else if (align == RIGHT)
-		{
-			x_draw = _rwidth-w;
-		}
-		if (x_draw < _rxoffset) x_draw = _rxoffset;
-		offset_calc = false;
-	}
-	if (fr.isScroll)
-	{
-		for (int i=2;i<buff_count;i++) memset(matrixbuff[i], BLACK, WidthScan * nRows* 4);
-		setCursor(x_draw,0);
-	}
-	else
-	{
-		fillRect(_rxoffset,_ryoffset,fr.w,fr.h,BLACK);
-		setCursor(x_draw,_ryoffset);
-	}
-	//print(s);
-	p=fr.text;
-	while (*p != NULL)
-	{
-		if (*p <= 0x7F)
-		{
-			setFont(fr.f);
-			write(*p);
-		}
-		else if (*p == 0xE2) //E2 80 93
-		{
-			char ch = '-'; //0x2D
-			setFont(fr->f);
-			if (fr->toUpper) if (( ch >= 'a' ) && ( ch <= 'z' ))  ch &= 0xDF;
-			write(ch);
-			y = 2;
-		}
-		else
-		{
-			c1 = *p;
-			c2 = *(p+1);
-			c3 = *(p+2);
-			x = -1; y = 0;
-				if (c1 == 0xC3)
-				{
-					for (int i=0;i<VNFonts_C3_Length;i++)
-					{
-						if (VNFonts_C3[i].value == c2)
-						{
-							x = VNFonts_C3[i].offset; y=1; break;
-						}
-					}
-				}
-				else if (c1 >= 0xC4 && c1 <= 0xC6)
-				{
-					for (int i=0;i<VNFonts_C456_Length;i++)
-					{
-						if (VNFonts_C456[i].value == c2)
-						{
-							x = VNFonts_C456[i].offset; y=1; break;
-						}
-					}
-				}
-				else if (c1 == 0xE1)
-				{
-					y=2;
-					if (c2 == 0xBA)
-					{
-						for (int i=0;i<VNFonts_E1BA_Length;i++)
-						{
-							if (VNFonts_E1BA[i].value == c3)
-							{
-								x = VNFonts_E1BA[i].offset; break;
-							}
-						}
-					}
-					else if (c2 == 0xBB && c3 <0xA0)
-					{
-						for (int i=0;i<VNFonts_E1BB_Length;i++)
-						{
-							if (VNFonts_E1BB[i].value == c3)
-							{
-								x = VNFonts_E1BB[i].offset; break;
-							}
-						}
-					}
-					else if (c2 == 0xBB && c3 >=0xA0)
-					{
-						for (int i=0;i<VNFonts_E1BBA0_Length;i++)
-						{
-							if (VNFonts_E1BBA0[i].value == c3)
-							{
-								x = VNFonts_E1BBA0[i].offset; break;
-							}
-						}
-					}
-				}
-				x -=1; //vi VNFonts2 Offset tu 1 -> 0
-				if (x>=0)
-				{
-					if (fr.fvn != NULL)
-					{
-						setFont(fr.fvn);
-						write(x + VNFonts_Offset);
-					}
-					else
-					{
-						write(VN2EN[x]);
-					}
-				}
-			p +=y;
-		}
-		p++;
-	}
-	rect_using=false;
-	if (fr.isScroll)
-	{
-		scroll_overbuffer = false;
-		scroll_length = getCursorX() + 32;
-		draw_scrollbuffer = false;
-		if (scroll_length<_width) scroll_length = _width;
-		if (scroll_length>scroll_buff_max) {scroll_length = scroll_buff_max;scroll_overbuffer=true;}
-	}
-	setyOffsetPlus(0); */
 }
-uint8_t RGBmatrixPanel::getPixel_scrollbuffer(int16_t x, int16_t y)
+
+ uint8_t RGBmatrixPanel::getPixel_scrollbuffer(int16_t x, int16_t y)
 {
   bool r, g;
   uint8_t c;

@@ -88,12 +88,15 @@ SoftwareSerial swSer(5,4, false, 256); //RX, TX
 #define End_BusConfig "End_Config"
 #define Begin_BusRoute "BusRoute"
 #define End_BusRoute "End_Route"
+#define Begin_BusStop "BusStopInfor"
+#define End_BusStop "End_BusStop"
 #define CheckRunning "Running?"
 #define Running "RUNNING"
 #define Idle "IDLE"
 #define Begin_SetTime "Set_Time"
 #define End_SetTime "End_Time"
 #define Set_Brightness "Set_Brightness="
+#define Set_Reset_Display "Reset_Display"
 //#define End_Brightness "End_Brightness"
 #define Set_LostConnection "Set_Connection=0"
 //#define End_Connection "End_Connection"
@@ -128,10 +131,14 @@ String payload = "";
 
 uint32_t mqtt_timestamp;
 WiFiClient mqttclient;
-String mqttServerName = "m20.cloudmqtt.com";            // for cloud broker - by hostname, from CloudMQTT account data
-int    mqttport = 14409;                                // default 1883, but CloudMQTT.com use other, for example: 13191, 23191 (SSL), 33191 (WebSockets) - use from CloudMQTT account data
-String mqttuser =  "test";                              // from CloudMQTT account data
-String mqttpass =  "test";                              // from CloudMQTT account data
+// String mqttServerName = "m20.cloudmqtt.com";
+// int    mqttport = 14409;
+// String mqttuser =  "test";
+// String mqttpass =  "test";
+String mqttServerName = "n2k.homenet.org";
+int    mqttport = 1883;
+String mqttuser =  "";
+String mqttpass =  "";
 PubSubClient psclient(mqttclient, mqttServerName, mqttport); // for cloud broker - by hostname
 
 uint8_t Comm_Infor=0;
@@ -154,9 +161,10 @@ char sketch_time[14];
 byte stat=0;
 byte LED=13;
 
+char busStopName[200];
+
 char tempbuffer[160];
-char n[20];
-char n1[20];
+
 char com_buffer[600];
 int  com_buffer_len;
 char data_buffer[6000];
@@ -172,6 +180,7 @@ HTTPClient http;
 
 unsigned long Startup_timestamp;
 unsigned long lastGet_timeStamp;
+unsigned long lastSent_timeStamp;
 unsigned long lastCheckConfig_timeStamp;
 
 bool PW_On=false;
@@ -182,7 +191,6 @@ float voltage;
 bool timer0_en;
 bool firstScan;
 bool RF_Disable;
-bool bDisplay_isRunning;
 bool bGet_condition,bGet_config;
 bool bDateTime_OK = false;
 
@@ -192,6 +200,14 @@ uint32_t time_bk;
 uint32_t last_infor_OK_ts;
 bool bLostconnection;
 
+uint8_t display_state;
+enum
+{
+	isNot_response,
+	isStartUp,
+	isIdle,
+	isRunning,
+};
 #define SECONDS_FROM_1970_TO_2000 946684800
 const uint8_t daysInMonth [] = { 31,28,31,30,31,30,31,31,30,31,30,31 };
 struct {
@@ -224,7 +240,9 @@ typedef struct {
 	bool changed;
 	bool visible;
 	bool route_sent;
+	bool isOutbound;
 }bus_struct;
+bool BusStopName_sent = false;
 bool Config_sent = false;
 bool bisNew_Config = false;
 uint32_t last_ConfigTime = 0;
@@ -436,7 +454,6 @@ void setup() {
   wServer.setNoDelay(true);
 #endif
   //
-  if (PW_On) Reset_display();
   delay(3000);
   Startup_timestamp = millis();
 
@@ -444,7 +461,11 @@ void setup() {
 //******************************************************************************************************
 
 void loop() {
-	//if (firstScan) Update_Firmware_fromServer();
+	if (firstScan)
+	{
+		Check_display_Running();
+		if (display_state == isNot_response) Reset_display();
+	}
 	wdt_reset();
 	httpServer.handleClient();
 	
@@ -465,11 +486,13 @@ void loop() {
 	  time_bk = time;
 	  DEBUG_SERIAL("%02d:%02d:%02d\n",rtc.hour,rtc.minute,rtc.second);	  
 	  if (Check_display_Running()>=6) Reset_display();
+	  if (display_state == isStartUp) bGet_condition = true;
   }
   if (millis()-lastGet_timeStamp>(EEData.time_getInfor*1000) || firstScan) 
   {
-	   if (bDisplay_isRunning) bGet_condition = true;
+	   if (display_state == isRunning) bGet_condition = true;
   }
+  
   if (bGet_condition)
  {
 	 int retry=3;
@@ -478,7 +501,7 @@ void loop() {
 			if (Get_Infor()) {last_infor_OK_ts = millis(); bLostconnection =false;}
 			if (--retry<=0) break;
 			delay(1000);
-		}				
+		}
 		if (Get_Error>=3 && EEData.Interface == from_Ethernet)
 		 {
 			 Get_Error=0;
@@ -492,11 +515,15 @@ void loop() {
 		 //Send config
 		 if (!Config_sent)
 		 {
-			if (Send_BusConfig() == 3) 
+			if (Send_BusStopName()==3)
 			{
-				Config_sent = true;
-				bisNew_Config = false;
-				lastCheckConfig_timeStamp = millis();
+				BusStopName_sent = true;
+				if (Send_BusConfig() == 3) 
+				{
+					Config_sent = true;
+					bisNew_Config = false;
+					lastCheckConfig_timeStamp = millis();
+				}
 			}
 		 }
 		 if (!Config_sent) break; //loi ko gui dc
@@ -512,6 +539,7 @@ void loop() {
 		 }
 		 if (i<Bus_count) break; //loi ko gui dc
 		 //Send_BusInfor();
+		 bool all_no_change=true;
 		 String s="[";
 		 for (int k=0;k<Bus_count;k++)
 		 {
@@ -532,7 +560,9 @@ void loop() {
 				s += ",car_no=" + String(Bus[i].car_no);
 				s += ",time=" + String(Bus[i].time_arrival);
 				s += ",passenger=" + String(Bus[i].passenger);
+				if (Bus[i].isOutbound) s += ",outbound";
 				//s += ",visible=" + String(Bus[i].visible);
+				all_no_change = false;
 				}
 				s += ",}";
 				//DEBUG_SERIAL("%s\n",data_buffer);
@@ -542,10 +572,14 @@ void loop() {
 		 }
 		s += "]";
 		s.toCharArray(data_buffer,sizeof(data_buffer)-1);
-		//DEBUG_SERIAL("%s\n",data_buffer);
-		if (Send_data2display(Begin_BusInfo,End_BusInfo))
+		DEBUG_SERIAL("%s\n",data_buffer);
+		if (all_no_change == false || (millis()-lastSent_timeStamp)>120000) //2M
 		{
-			for (int k=0;k<Bus_count;k++) Bus[k].changed = false;
+			if (Send_data2display(Begin_BusInfo,End_BusInfo))
+			{
+				lastSent_timeStamp = millis();
+				for (int k=0;k<Bus_count;k++) Bus[k].changed = false;
+			}
 		}
 		Comm_Infor=0;
 	 }
@@ -559,11 +593,14 @@ if (bLostconnection == false && millis() - last_infor_OK_ts > 120000) //2M
 	displaySerial.println(Set_LostConnection);
 }
 //check config
-if (bDisplay_isRunning && millis()-lastCheckConfig_timeStamp>(EEData.time_checkconfig*1000)) 
+if ((display_state == isRunning) && (millis()-lastCheckConfig_timeStamp) >(EEData.time_checkconfig*1000)) 
   {
 	Get_Config();
-	if (bisNew_Config) Send_BusConfig(true); //from buffer
-	lastCheckConfig_timeStamp = millis(); 
+	if (bisNew_Config) 
+	{
+		if (BusStopName_sent) Send_BusConfig(true); //from buffer
+	}
+	lastCheckConfig_timeStamp = millis();
   }
  DebugFromDisplay();
  //
@@ -676,6 +713,9 @@ void Process_Com_buffer(bool isfrommqtt)
 			sprintf(tempbuffer,"%s%s\n",Set_busStop,EEData.BusStopNo);
 			DEBUG_SERIAL(tempbuffer);
 			Save_Config();
+			//
+			Reset_display();
+			busStopName[0] = 0;
 		}
 		else if (strstr(com_buffer, Set_Interface))
 		{
@@ -800,6 +840,10 @@ void Process_Com_buffer(bool isfrommqtt)
 		{
 			SketchInfor2tempbuffer();
 		}
+		else if (strstr(com_buffer,Set_Reset_Display) != NULL)
+		{
+			Reset_display();			
+		}
 		else
 		{
 			displaySerial.write(com_buffer,com_buffer_len);
@@ -836,6 +880,8 @@ void Reset_Bus()
 	Config_sent = false;
 	last_ConfigTime = 0;
 	lastGet_timeStamp = 0;
+	BusStopName_sent = false;
+	lastCheckConfig_timeStamp = millis();
 }
 bool Get_Config()
 {
@@ -1358,7 +1404,6 @@ uint8_t Check_display_Running()
 	int n = 0;
 	int retry=2;
 	bool ret=false;
-	bDisplay_isRunning = false;
   while(retry-->0)
   {
 	  n=0;
@@ -1381,20 +1426,20 @@ uint8_t Check_display_Running()
 		  if (strstr(tempbuffer, Running)) {
 		   DEBUG_SERIAL("[DISPLAY] %s\n",Running);
 		   ret = true;
-		   bDisplay_isRunning = true;
+		   display_state = isRunning;
 		   Comm_Error = 0;
 		   break;
 		  }
 		  if (strstr(tempbuffer, Idle)) {
 		   DEBUG_SERIAL("[DISPLAY] %s\n",Idle);
 		   ret = true;
-		   bDisplay_isRunning = false;
+		   display_state = isIdle;
 		   Comm_Error = 0;
 		   break;
 		  }
 		  if (strstr(tempbuffer, StartUp)) {
 		   DEBUG_SERIAL("[DISPLAY] %s\n", StartUp);
-		   bDisplay_isRunning = true;
+		   display_state = isStartUp;
 		   lastGet_timeStamp = 0;
 		   ret = true;
 		   Comm_Error = 0;
@@ -1411,6 +1456,7 @@ uint8_t Check_display_Running()
   {
 	  //DEBUG_SERIAL("[DISPLAY] NOT Response\n");
 	sprintf(tempbuffer,"[DISPLAY] NOT Response\n");
+	display_state = isNot_response;
     DEBUG_SERIAL(tempbuffer);
 	pubStatus(tempbuffer);
 	  if (millis()<10000) Comm_Error = 10; //Reset display
@@ -1419,7 +1465,8 @@ uint8_t Check_display_Running()
 }
 void Reset_display()
 {
-	DEBUG_SERIAL("[RESET DISPLAY]\n");
+	sprintf(tempbuffer,"[%s]\n",Set_Reset_Display);
+	DEBUG_SERIAL(tempbuffer);	
 	pinMode(DISPLAY_RESET,OUTPUT);
 	digitalWrite(DISPLAY_RESET,LOW);
 	wdt_reset();
@@ -1427,6 +1474,14 @@ void Reset_display()
 	digitalWrite(DISPLAY_RESET,HIGH);
 	pinMode(DISPLAY_RESET,INPUT);
 	Comm_Error = 0;
+	wdt_reset();
+	delay(1000);
+	Reset_Bus();
+}
+uint8_t Send_BusStopName()
+{
+	sprintf(data_buffer,"[BusStopNo=%s;busStopName=%s;]",EEData.BusStopNo,busStopName);	
+	return Send_data2display(&Begin_BusStop[0],&End_BusStop[0]);
 }
 uint8_t Send_BusInfor()
 {
@@ -1857,7 +1912,23 @@ void Get_BusInfor_from_buffer()
 		memcpy(&bus_temp.station_from[0],p1,sizeof(bus_temp.station_from)-1);
 		debugSerial.println(bus_temp.station_from); */
 		//
-		
+		if (busStopName[0] == 0)
+		{			
+			p1 = p + 1;
+			p = strstr(p1,"Tentram");
+			if (p==NULL) continue;
+			if (p > p_endline) {p = p_endline; continue;};
+			p1 = strchr(p,':') + 2;
+			p = strchr(p1,'"');
+			*p = 0;
+			memcpy(&busStopName[0],p1,sizeof(busStopName)-1);
+			*p = '"';
+			DEBUG_SERIAL("busStopName=%s\n",busStopName);
+		}
+		//inbound - outbound
+		p = strstr(p1,"outbound");
+		if (p && p < p_endline) bus_temp.isOutbound = true;
+		else bus_temp.isOutbound = false;
 		p = p_endline;
 		//
 		bool exist = false;
@@ -1889,9 +1960,11 @@ void Get_BusInfor_from_buffer()
 			memcpy(&Bus[id].car_no[0],bus_temp.car_no,sizeof(Bus[id].car_no)-1);
 			memcpy(&Bus[id].time_arrival[0],bus_temp.time_arrival,sizeof(Bus[id].time_arrival)-1);
 			memcpy(&Bus[id].passenger[0],bus_temp.passenger,sizeof(Bus[id].passenger)-1);
+			Bus[id].isOutbound = bus_temp.isOutbound;
 		}
 		DEBUG_SERIAL("Bus %d: index=%d, route_no=%s, car_no=%s, time_arrival=%s, changed=%d, visible=%d\n",id,Bus[id].display_index,Bus[id].route_no,Bus[id].car_no,Bus[id].time_arrival,Bus[id].changed,Bus[id].visible);
-		
+		sprintf(tempbuffer,"index=%d, route_no=%s, car_no=%s, time_arrival=%s",Bus[id].display_index,Bus[id].route_no,Bus[id].car_no,Bus[id].time_arrival);
+		pubStatus(tempbuffer);
 		disp_index+=1;
 		if (Bus_count >= Bus_Max) break;
 	};
