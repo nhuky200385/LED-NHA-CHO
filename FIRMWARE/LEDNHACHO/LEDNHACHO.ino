@@ -19,6 +19,7 @@
 #define Running "RUNNING"
 #define Idle "IDLE"
 #define Set_display "DISPLAY="
+#define Set_Reset_Display "Reset_Display"
 #define Begin_SetTime "Set_Time"
 #define End_SetTime "End_Time"
 #define Set_Brightness "Set_Brightness="
@@ -46,7 +47,7 @@ uint32_t timeout;
 int sec=0,minute=0,hour=0;
 bool swap_businfo=false,flash=false,b=false, swap_station;
 uint32_t last_scroll_ts;
-const uint32_t scroll_ts = 50;
+const uint32_t scroll_ts = 40;
 const uint32_t businfo_swap_ts = 10000; //10s
 uint32_t flash_ts,brightness_ts,businfo_ts,station_ts;
 uint8_t businfo_index=0;
@@ -216,7 +217,12 @@ void Init_bus()
 void Process_Serialbuffer(Stream& inStream)
 {
 	char *p;
-	if (strstr(serial_buffer, Set_display))
+	if (strstr(serial_buffer, Set_Reset_Display))
+	{
+		debugSerial.println(Set_Reset_Display);
+		Reset_all_Data();
+	}
+	else if (strstr(serial_buffer, Set_display))
 	{
 		p = strstr(serial_buffer, Set_display) + sizeof(Set_display) - 1;
 		State = atoi(p);
@@ -444,7 +450,7 @@ void setup() {
 void loop() {
 	digitalWrite(OE_74HC245,State==1 ? LOW : HIGH);
 	long ml = millis();
-	if (ml - brightness_ts >=300000 ) //5M
+	if (brightness_ts==0 || (ml - brightness_ts) >=30000 ) //30s
 	{
 		// debugSerial.print("Position: ");
 		// debugSerial.print(Frame[6].scroll_position); debugSerial.print(", ");
@@ -490,6 +496,7 @@ void loop() {
 		if (Bus_count>0)
 		{
 			Bus_count = 0;
+			debugSerial.println(F("BusInfor Timeout"));
 			Frame[finfor].text = &lostConnection[0];
 			Frame[finfor].changed = text_change;
 			ClearBusInfor();
@@ -672,6 +679,11 @@ void CheckComm()
 					Comm_Infor = isBusStop;
 					CommSerial.println(Begin_BusStop);
 					break;
+				}
+				else if (strstr(comm_buffer, Set_Reset_Display))
+				{
+					Comm_Infor = 0;
+					Reset_all_Data();
 				}
 				/* else if (strstr(comm_buffer, Set_Brightness)) {
 					debugSerial.print("<-"); debugSerial.println(Set_Brightness);
@@ -916,8 +928,25 @@ next_:
 	}
 	if (bisCommonInfor == false)
 	{
-		if (Bus_count == 0) Frame[finfor].text = &nobus[0];
+		if (Bus_count == 0)
+		{
+			Frame[finfor].text = &nobus[0];
+			if (Frame[froute_index].w >0)
+			{
+				Frame[froute_index].w = 0;
+				Frame[finfor].x = Frame[froute_index].w;
+				Frame[finfor].w = 128 - Frame[froute_index].w;
+				Frame[finfor].changed |= text_change;
+			}
+		}
 		else{
+			if (Frame[froute_index].w == 0)
+			{
+				Frame[froute_index].w = 22;
+				Frame[finfor].x = Frame[froute_index].w;
+				Frame[finfor].w = 128 - Frame[froute_index].w;
+				Frame[froute_index].changed = text_change;
+			}
 			//debugSerial.print("Bus[0].changed="); debugSerial.println(Bus[0].changed);
 			if (Bus[0].changed == all_change)
 			{				
@@ -1102,7 +1131,7 @@ void Get_BusConfig_from_buffer()
 		//
 		Process_Config();
 		//neu khong hien thi tuyen gan den hoac hien thi thong tin chung thi hien thi thong tin Full width
-		if (bisCommonInfor || Frame[froute_index].color == BLACK)
+		/* if (bisCommonInfor || Frame[froute_index].color == BLACK)
 		{
 			Frame[froute_index].w = 0;
 			Frame[finfor].x = Frame[froute_index].w;
@@ -1113,7 +1142,15 @@ void Get_BusConfig_from_buffer()
 			Frame[froute_index].w = 22;
 			Frame[finfor].x = Frame[froute_index].w;
 			Frame[finfor].w = 128 - Frame[froute_index].w;
+		} */
+		if(Frame[froute_index].color == BLACK)
+		{
+			Frame[froute_index].w = 0;
+			Frame[finfor].x = Frame[froute_index].w;
+			Frame[finfor].w = 128 - Frame[froute_index].w;
 		}
+		Frame[froute_index].changed = all_change;
+		Frame[finfor].changed = all_change;
 		Redraw();
 }
 void Process_Config()
@@ -1311,8 +1348,12 @@ void Get_BusStopName()
 	p1 = strchr(p,'=') + 1;
 	p = strchr(p1,';');
 	*p = 0;
-	memcpy(busStopName,p1,p - p1 + 1);
-	//debugSerial.println(busStopName);
+	if (!Compare2array(busStopName,p1))
+	{
+		memcpy(busStopName,p1,p - p1 + 1);
+		//debugSerial.println(busStopName);
+		Process_Config();
+	}
 }
 void Get_Brightness()
 {
@@ -1491,8 +1532,28 @@ void ClearBusInfor()
 		memcpy(&Bus[i].time_arrival[0],"\0",sizeof(Bus[0].time_arrival)-1);
 	}
 	for (int i = frow1_c1 ; i<=froute_index;i++) Frame[i].changed = all_change;
-	debugSerial.println(F("BusInfor Timeout"));
+	//
 	Redraw();
+}
+void Reset_all_Data()
+{
+	Init_bus();
+	Frame_Config();
+	for (int i=0;i<Route_Max;i++)
+	{
+		memset(Route[i].route_no,0,sizeof(Route[i].route_no));
+		memset(Route[i].routeName,0,sizeof(Route[i].routeName));
+		memset(Route[i].from,0,sizeof(Route[i].from));
+		memset(Route[i].to,0,sizeof(Route[i].to));
+		memset(Route[i].infor,0,sizeof(Route[i].infor));
+	}
+	for (int i = 0;i<Frame_Max;i++)
+	{
+		Frame[i].changed = all_change;
+	}
+	ClearBusInfor();
+	last_ConfigTime = 0;
+	bstartup = true;
 }
 void convert2upperChar(char *ch)
 {

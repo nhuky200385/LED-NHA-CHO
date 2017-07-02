@@ -1,5 +1,8 @@
 // compiled path C:\Users\LT-N2K\AppData\Local\Temp
-
+//ChipID
+//Cong vien hung vuong: BUS_376F07
+//DD Chung cu 4A Chu Huy Man: BUS_06DB02
+//Ben xe Bui Duong Lich: BUS_06D780
 #include <memory>
 #include <Arduino.h>
 #include <ESP8266WiFi.h>
@@ -17,8 +20,8 @@
 #include <Ethernet.h>
 
 // A UDP instance to let us send and receive packets over UDP
-WiFiUDP udp;
-unsigned int udpPort = 11000;  // local port to listen on
+// WiFiUDP udp;
+// unsigned int udpPort = 11000;  // local port to listen on
 
 // Enter a MAC address and IP address for your controller below.
 // The IP address will be dependent on your local network:
@@ -57,7 +60,7 @@ SoftwareSerial swSer(5,4, false, 256); //RX, TX
 #define DEBUG_SERIAL(...)
 #endif
 
-#define WIFI_AP_En true
+//#define WIFI_AP_En true
 
 #define from_Ethernet 0
 #define from_WIFI 1
@@ -68,16 +71,17 @@ SoftwareSerial swSer(5,4, false, 256); //RX, TX
 // #define time_checkconfig 300 //seconds
 
 
-#define Set_EthIP "EthIP="
-#define Set_Wifi "Wifi="
-#define Set_Interface "Interface="
+#define Set_EthIP "EthIP=" // EthIP=192.168.1.10
+#define Set_Wifi "Wifi="  //Wifi=3G,1234567890
+#define Set_Interface "Interface=" //Interface=0 (E) or Interface=1 (W)
 #define Set_busStop "BusStop="
 #define Set_Default "Default=1"
 #define Set_Host "Host=" //Host=abc,Port=123,Infor_arg=akdj,Config_arg=add,Route_arg=xxx
-#define Set_Port "Post="
+#define Set_Port "Port="
 #define Set_Infor_arg "Infor_arg="
 #define Set_Config_arg "Config_arg="
 #define Set_Route_arg "Route_arg="
+//
 #define Set_time_getInfor "TgetInfor="
 #define Set_time_checkconfig "TcheckConfig="
 #define Show_Config "Config?"
@@ -131,14 +135,15 @@ String payload = "";
 
 uint32_t mqtt_timestamp;
 WiFiClient mqttclient;
-// String mqttServerName = "m20.cloudmqtt.com";
-// int    mqttport = 14409;
-// String mqttuser =  "test";
-// String mqttpass =  "test";
-String mqttServerName = "n2k.homenet.org";
-int    mqttport = 1883;
-String mqttuser =  "";
-String mqttpass =  "";
+//EthernetClient mqttclient;
+String mqttServerName = "m20.cloudmqtt.com";
+int    mqttport = 14409;
+String mqttuser =  "test";
+String mqttpass =  "test";
+// String mqttServerName = "n2k.homenet.org";
+// int    mqttport = 1883;
+// String mqttuser =  "";
+// String mqttpass =  "";
 PubSubClient psclient(mqttclient, mqttServerName, mqttport); // for cloud broker - by hostname
 
 uint8_t Comm_Infor=0;
@@ -319,7 +324,7 @@ void Read_Config(bool bdefault)
 		memcpy(&EEData.WiFi_Name[0],"3G\0",sizeof(EEData.WiFi_Name));
 		memcpy(&EEData.WiFi_Pass[0],"1234567890\0",sizeof(EEData.WiFi_Pass));
 		memcpy(&EEData.host[0],"bus.danang.gov.vn\0",sizeof(EEData.host));
-		memcpy(&EEData.infor_arg[0],"/bus-services-api/BusInfo?content=mt%20\0",sizeof(EEData.infor_arg));
+		memcpy(&EEData.infor_arg[0],"/bus-services-api/BusInfo?content=it%20\0",sizeof(EEData.infor_arg));
 		memcpy(&EEData.config_arg[0],"/bus-services-api/getConfigLed\0",sizeof(EEData.config_arg));
 		memcpy(&EEData.route_arg[0],"/bus-services-api/getBusRoute?content=\0",sizeof(EEData.route_arg));
 		memcpy(&EEData.BusStopNo[0],"0\0",sizeof(EEData.BusStopNo));
@@ -338,13 +343,13 @@ void Save_Config()
 }
 void SetupWifi()
 {
-	if (WIFI_AP_En)
+	if (EEData.WiFi_Name[0] != 0)
 	{
 	 WiFi.mode(WIFI_AP_STA);
 	 int count =20;
 	  //
 	  WiFi.begin(EEData.WiFi_Name, EEData.WiFi_Pass);
-	  WiFi.softAP(chipID, password_ap);
+	  WiFi.softAP(chipID, password_ap,1,1); // ssid, password, channel, hide
 	 count =20;
 	while (WiFi.status() != WL_CONNECTED) {
 		delay(500);
@@ -353,7 +358,7 @@ void SetupWifi()
 		wdt_reset();
 	  }
 	}
-	if (!WIFI_AP_En || WiFi.status() != WL_CONNECTED)
+	if (EEData.WiFi_Name[0] == 0 || WiFi.status() != WL_CONNECTED)
 	{
 		WiFi.mode(WIFI_STA);
 		WiFi.softAP(chipID, password_ap);
@@ -368,7 +373,7 @@ void SetupWifi()
 	 httpUpdater.setup(&httpServer, update_path, update_username, update_password);
 	 httpServer.begin();
 	 //
-	 udp.begin(udpPort);
+	 //udp.begin(udpPort);
 }
 void StartEthernet()
 {
@@ -476,8 +481,10 @@ void loop() {
 	//
 	bGet_condition=false; 
   uint32_t time = Now();
+  //auto check4update
+  if (bDateTime_OK && rtc.minute == 0 && rtc.second<2) Update_Firmware_fromServer();
   if (bDateTime_OK && (time < unixTime_sent || time - unixTime_sent >300))
-  {	  
+  {
 	  if (Send_DateTime()) unixTime_sent = time;
 	  else unixTime_sent = time-290;  //resend after 10 s;
   }
@@ -488,17 +495,27 @@ void loop() {
 	  if (Check_display_Running()>=6) Reset_display();
 	  if (display_state == isStartUp) bGet_condition = true;
   }
-  if (millis()-lastGet_timeStamp>(EEData.time_getInfor*1000) || firstScan) 
+  if ((millis()-lastGet_timeStamp)>(EEData.time_getInfor*1000) || firstScan) 
   {
-	   if (display_state == isRunning) bGet_condition = true;
+	   if (display_state == isRunning) 
+	   {
+		   bGet_condition = true;
+		//DEBUG_SERIAL("bGet_condition=1\n");
+	   }
   }
   
   if (bGet_condition)
  {
 	 int retry=3;
+	 Comm_Infor=0;
 		while (Comm_Infor == 0) 
 		{
-			if (Get_Infor()) {last_infor_OK_ts = millis(); bLostconnection =false;}
+			if (bDateTime_OK && EEData.BusStopNo[1] == 0 && EEData.BusStopNo[0] == '0')
+			  {
+				 DEBUG_SERIAL("Not yet config BusStop=%s\n",EEData.BusStopNo);
+				 break;
+			  }
+			if (Get_Infor()) {last_infor_OK_ts = millis(); bLostconnection =false; break;}
 			if (--retry<=0) break;
 			delay(1000);
 		}
@@ -512,6 +529,11 @@ void loop() {
 	 //Send_DateTime();
 	 while (Comm_Infor == isBusInfo) {
 		 Get_BusInfor_from_buffer();
+		 //
+		 if (BusStopName_sent == false)
+		 {
+			 if (Send_BusStopName()==3) BusStopName_sent = true;
+		 }
 		 //Send config
 		 if (!Config_sent)
 		 {
@@ -573,7 +595,7 @@ void loop() {
 		s += "]";
 		s.toCharArray(data_buffer,sizeof(data_buffer)-1);
 		DEBUG_SERIAL("%s\n",data_buffer);
-		if (all_no_change == false || (millis()-lastSent_timeStamp)>120000) //2M
+		if (all_no_change == false || (millis()-lastSent_timeStamp)>=60000) //1M
 		{
 			if (Send_data2display(Begin_BusInfo,End_BusInfo))
 			{
@@ -590,17 +612,20 @@ void loop() {
 if (bLostconnection == false && millis() - last_infor_OK_ts > 120000) //2M
 {
 	bLostconnection = true;
-	displaySerial.println(Set_LostConnection);
+	//displaySerial.println(Set_LostConnection);
 }
 //check config
-if ((display_state == isRunning) && (millis()-lastCheckConfig_timeStamp) >(EEData.time_checkconfig*1000)) 
+if ((display_state == isRunning) && (bisNew_Config || (millis()-lastCheckConfig_timeStamp) >(EEData.time_checkconfig*1000)))
   {
-	Get_Config();
-	if (bisNew_Config) 
+	if (BusStopName_sent)
 	{
-		if (BusStopName_sent) Send_BusConfig(true); //from buffer
+		Get_Config();
+		if (bisNew_Config) 
+		{
+			Send_BusConfig(true); //from buffer
+		}
+		lastCheckConfig_timeStamp = millis();
 	}
-	lastCheckConfig_timeStamp = millis();
   }
  DebugFromDisplay();
  //
@@ -650,6 +675,7 @@ if (Serial.available())
 {
 	int chars=Serial.readBytesUntil('\n', com_buffer, sizeof(com_buffer));	
 	com_buffer[chars] = 0;
+	DEBUG_SERIAL(com_buffer);
     Process_Com_buffer();
   while (Serial.available()) Serial.read(); //clear serial
 }
@@ -672,7 +698,7 @@ void Wifi_Server()
 }
 void Check_udp_packet()
 {
-	int packetSize = udp.parsePacket();
+/* 	int packetSize = udp.parsePacket();
   if (packetSize) {
     IPAddress remoteIp = udp.remoteIP();
 	DEBUG_SERIAL("UDP from: %d.%d.%d.%d, port %d\n",remoteIp[0],remoteIp[1],remoteIp[2],remoteIp[3],udp.remotePort());
@@ -692,7 +718,7 @@ void Check_udp_packet()
 		udp.print(tempbuffer);
 		udp.endPacket();
 	}
-  }
+  } */
 }
 void Process_Com_buffer(bool isfrommqtt)
 {
@@ -720,7 +746,15 @@ void Process_Com_buffer(bool isfrommqtt)
 		else if (strstr(com_buffer, Set_Interface))
 		{
 			p = strstr(com_buffer, Set_Interface) + sizeof(Set_Interface) - 1;
-			EEData.Interface = atoi(p);
+			if (*p == 'E')
+			{
+				EEData.Interface = from_Ethernet;
+			}
+			else if(*p == 'W')
+			{
+				EEData.Interface = from_WIFI;
+			}
+			else EEData.Interface = atoi(p);
 			lastGet_timeStamp = 0;
 			sprintf(tempbuffer,"%s%s\n",Set_Interface,EEData.Interface == from_Ethernet ? "Ethernet" : "WIFI");
 			DEBUG_SERIAL(tempbuffer);
@@ -728,11 +762,17 @@ void Process_Com_buffer(bool isfrommqtt)
 		}
 		else if (strstr(com_buffer,Set_Wifi))
 		{
+			//Wifi=3G,1234567890
 			p = strstr(com_buffer,Set_Wifi) + sizeof(Set_Wifi) - 1;
 			p1 = strchr(p,',');
 			if (p1==NULL) return;
 			*p1 = 0;
-			memcpy(EEData.WiFi_Name,p,sizeof(EEData.WiFi_Name));
+			if (p==p1) 
+			{
+				EEData.WiFi_Name[0] = 0;
+				//DEBUG_SERIAL("NULL");
+			}
+			else memcpy(EEData.WiFi_Name,p,sizeof(EEData.WiFi_Name));
 			p = p1 + 1;
 			p1 = strchr(p,'\r');
 			if (p1) *p1 = 0;
@@ -749,13 +789,13 @@ void Process_Com_buffer(bool isfrommqtt)
 			IPAddress ip;
 			ip[0] = atoi(p);
 			p1 = strchr(p,'.');
-			if (p1==NULL) return; p=p1;
+			if (p1==NULL) return; p=p1 + 1;
 			ip[1] = atoi(p);
 			p1 = strchr(p,'.');
-			if (p1==NULL) return; p=p1;
+			if (p1==NULL) return; p=p1 + 1;
 			ip[2] = atoi(p);
 			p1 = strchr(p,'.');
-			if (p1==NULL) return; p=p1;
+			if (p1==NULL) return; p=p1 + 1;
 			ip[3] = atoi(p);
 			EEData.ethIP = ip;			
 			sprintf(tempbuffer,"%s%d.%d.%d.%d\n",Set_EthIP,EEData.ethIP[0],EEData.ethIP[1],EEData.ethIP[2],EEData.ethIP[3]);
@@ -767,11 +807,14 @@ void Process_Com_buffer(bool isfrommqtt)
 		{
 			do
 			{
+				bool next_available = false;
+				//
 				p = strstr(com_buffer,Set_Host) + sizeof(Set_Host) - 1;
 				p1 = strchr(p,',');
-				if (p1) *p1 = 0;
+				next_available = false;
+				if (p1) {*p1 = 0; next_available = true;}
 				memcpy(EEData.host,p,sizeof(EEData.host));
-				if (p1) *p1 = ','; else break;
+				if (next_available) *p1 = ','; else break;
 				p = p1 + 1;
 				p = strstr(com_buffer,Set_Port);
 				if (p==NULL) break;
@@ -781,21 +824,24 @@ void Process_Com_buffer(bool isfrommqtt)
 				if (p==NULL) break;
 				p += sizeof(Set_Infor_arg) - 1;
 				p1 = strchr(p,',');
-				if (p1) *p1 = 0;
+				next_available = false;
+				if (p1) {*p1 = 0; next_available = true;}
 				memcpy(EEData.infor_arg,p,sizeof(EEData.infor_arg));
-				if (p1) *p1 = ','; else break;
+				if (next_available) *p1 = ','; else break;
 				p = strstr(com_buffer,Set_Config_arg);
 				if (p==NULL) break;
 				p += sizeof(Set_Config_arg) - 1;
 				p1 = strchr(p,',');
-				if (p1) *p1 = 0;
+				next_available = false;
+				if (p1) {*p1 = 0; next_available = true;}
 				memcpy(EEData.config_arg,p,sizeof(EEData.config_arg));
-				if (p1) *p1 = ','; else break;
+				if (next_available) *p1 = ','; else break;
 				p = strstr(com_buffer,Set_Route_arg);
 				if (p==NULL) break;
 				p += sizeof(Set_Route_arg) - 1;
 				p1 = strchr(p,',');
-				if (p1) *p1 = 0;
+				next_available = false;
+				if (p1) {*p1 = 0; next_available = true;}
 				memcpy(EEData.route_arg,p,sizeof(EEData.route_arg));
 				break;			
 			}while (true);
@@ -887,6 +933,7 @@ bool Get_Config()
 {
 	bool b = false;
 	bisNew_Config = false;
+	Comm_Infor = 0;
 	if (EEData.Interface == from_Ethernet) b= GET_Config_from_Ethernet();
 	else if (EEData.Interface == from_WIFI) b= GET_Config_from_Wifi();
 	if (b)
@@ -909,17 +956,19 @@ bool Get_Config()
 }
 bool Get_Infor()
 {
-	if (bDateTime_OK && EEData.BusStopNo[1] == 0 && EEData.BusStopNo[0] == '0')
+	Comm_Infor = 0;
+	/* if (bDateTime_OK && EEData.BusStopNo[1] == 0 && EEData.BusStopNo[0] == '0')
 	  {
 		 DEBUG_SERIAL("Not yet config BusStop=%s\n",EEData.BusStopNo);
 		 return false;
-	  }
+	  } */
 	if (EEData.Interface == from_Ethernet) return GET_Infor_from_Ethernet();
 	else if (EEData.Interface == from_WIFI) return GET_Infor_from_Wifi();
 	else return false;
 }
 bool Get_Route(char *routeNo)
 {
+	Comm_Infor = 0;
 	if (EEData.Interface == from_Ethernet) return GET_Route_from_Ethernet(routeNo);
 	else if (EEData.Interface == from_WIFI) return GET_Route_from_Wifi(routeNo);
 	else return false;
@@ -949,7 +998,7 @@ bool GET_Config_from_Ethernet()
 		debugSerial.println(data_buffer);
 		Comm_Infor = isBusConfig;
 		//Send_BusInfor();
-		}
+		}		
 	}else e_bytesRecv = 0;
 	if (header_time != "")
 	{
@@ -958,7 +1007,6 @@ bool GET_Config_from_Ethernet()
 	}
   }
   else {
-    DEBUG_SERIAL("connection failed\n");
 	sprintf(tempbuffer,"connection failed\n");
    DEBUG_SERIAL(tempbuffer);
    pubStatus(tempbuffer);
@@ -985,7 +1033,8 @@ bool GET_Infor_from_Ethernet()
     Eclient.println();
 	int dl=30;
 	e_bytesRecv = 0;
-	if (handleHeaderResponse(Eclient,7000) == 200)
+	int rescode = handleHeaderResponse(Eclient,7000);
+	if (rescode == 200)
 	{
 		if (e_bytesRecv>0)
 		{
@@ -995,7 +1044,20 @@ bool GET_Infor_from_Ethernet()
 		Comm_Infor = isBusInfo;
 		//Send_BusInfor();
 		}
-	}else e_bytesRecv = 0;
+		else
+		{
+			sprintf(tempbuffer,"Conneced but No data response\n");
+			DEBUG_SERIAL(tempbuffer);
+			pubStatus(tempbuffer);
+		}
+	}
+	else 
+	{
+		sprintf(tempbuffer,"ReturnCode=%d\n",rescode);
+		DEBUG_SERIAL(tempbuffer);
+		pubStatus(tempbuffer);
+		e_bytesRecv = 0;
+	}
 	if (header_time != "")
 	{
 		//DEBUG_SERIAL("%s\n",header_time.c_str());
@@ -1197,7 +1259,8 @@ bool GET_Infor_from_Wifi()
     client1.println();
 	int dl=30;
 	e_bytesRecv = 0;
-	if (handleHeaderResponse(client1,7000) == 200)
+	int rescode = handleHeaderResponse(client1,7000);
+	if (rescode == 200)
 	{
 		if (e_bytesRecv>0)
 		{
@@ -1207,7 +1270,20 @@ bool GET_Infor_from_Wifi()
 		Comm_Infor = isBusInfo;
 		//Send_BusInfor();
 		}
-	}else e_bytesRecv = 0;
+		else
+		{
+			sprintf(tempbuffer,"Conneced but No data response\n");
+			DEBUG_SERIAL(tempbuffer);
+			pubStatus(tempbuffer);
+		}
+	}
+	else 
+	{
+		sprintf(tempbuffer,"ReturnCode=%d\n",rescode);
+		DEBUG_SERIAL(tempbuffer);
+		pubStatus(tempbuffer);
+		e_bytesRecv = 0;
+	}
 	if (header_time != "")
 	{
 		//DEBUG_SERIAL("%s\n",header_time.c_str());
@@ -1466,7 +1542,8 @@ uint8_t Check_display_Running()
 void Reset_display()
 {
 	sprintf(tempbuffer,"[%s]\n",Set_Reset_Display);
-	DEBUG_SERIAL(tempbuffer);	
+	DEBUG_SERIAL(tempbuffer);
+	displaySerial.println(Set_Reset_Display);
 	pinMode(DISPLAY_RESET,OUTPUT);
 	digitalWrite(DISPLAY_RESET,LOW);
 	wdt_reset();
@@ -1475,7 +1552,16 @@ void Reset_display()
 	pinMode(DISPLAY_RESET,INPUT);
 	Comm_Error = 0;
 	wdt_reset();
-	delay(1000);
+	
+	int recheck = 7;
+	display_state = isNot_response;
+	while (display_state == isNot_response)
+	{
+		if (recheck--<=0) break;
+		wdt_reset();
+		delay(1000);
+		Check_display_Running();
+	}
 	Reset_Bus();
 }
 uint8_t Send_BusStopName()
@@ -1835,9 +1921,38 @@ void Get_BusInfor_from_buffer()
 		Bus[i].visible = false;
 		//Bus[i].changed = false; //Set = false if sent ok
 	}
+	//kiem tra cap nhat cau hinh
+	p = strstr(data_buffer,"capnhatcauhinh");
+	if (p)
+	{
+		p1 = strchr(p,':') + 1;
+		uint32_t ts = atol(p1);
+		if (ts != last_ConfigTime)
+		{
+			bisNew_Config = true;
+			DEBUG_SERIAL("New_Config\n");
+		}
+	}
+	//Ten tram
+	p = strstr(data_buffer,"Tentram");
+	if (p)
+	{
+		p1 = strchr(p,':') + 2;
+		p = strchr(p1,'"');
+		*p = 0;
+		if (busStopName[0] == 0 || Compare2array(busStopName,p1) == false)
+		{
+			memcpy(&busStopName[0],p1,sizeof(busStopName)-1);
+			DEBUG_SERIAL("busStopName=%s\n",busStopName);
+			BusStopName_sent = false;
+		}
+		*p = '"';
+	}	
+	//
 	p = strstr(data_buffer,"[{");
 	while(p){
-		bus_struct bus_temp;
+		bus_struct bus_temp;		
+		//
 		p1 = p + 1;
 		p_endline = strstr(p1,"},");
 		if (p_endline == NULL) p_endline = strstr(p1,"}]");
@@ -1849,6 +1964,7 @@ void Get_BusInfor_from_buffer()
 		p = strchr(p1,'"');
 		*p = 0;
 		memcpy(&bus_temp.route_no[0],p1,sizeof(bus_temp.route_no)-1);
+		bus_temp.route_no[sizeof(bus_temp.route_no)-1] = 0;
 		*p = '"';
 		//
 		/* p1 = p + 1;
@@ -1870,6 +1986,7 @@ void Get_BusInfor_from_buffer()
 		p = strchr(p1,'"');
 		*p = 0;
 		memcpy(&bus_temp.car_no[0],p1,sizeof(bus_temp.car_no)-1);
+		bus_temp.car_no[sizeof(bus_temp.car_no)-1] = 0;
 		*p = '"';
 		//
 		p1 = p + 1;
@@ -1880,6 +1997,7 @@ void Get_BusInfor_from_buffer()
 		p = strchr(p1,',');
 		*p = 0;
 		memcpy(&bus_temp.passenger[0],p1,sizeof(bus_temp.passenger)-1);
+		bus_temp.passenger[sizeof(bus_temp.passenger)-1] = 0;
 		*p = ',';
 		//
 		p1 = p + 1;
@@ -1890,6 +2008,7 @@ void Get_BusInfor_from_buffer()
 		p = strchr(p1,'"');
 		*p = 0;
 		memcpy(&bus_temp.time_arrival[0],p1,sizeof(bus_temp.time_arrival)-1);
+		bus_temp.time_arrival[sizeof(bus_temp.time_arrival)-1] = 0;
 		*p = '"';
 		//
 		/* p1 = p + 1;
@@ -1912,19 +2031,6 @@ void Get_BusInfor_from_buffer()
 		memcpy(&bus_temp.station_from[0],p1,sizeof(bus_temp.station_from)-1);
 		debugSerial.println(bus_temp.station_from); */
 		//
-		if (busStopName[0] == 0)
-		{			
-			p1 = p + 1;
-			p = strstr(p1,"Tentram");
-			if (p==NULL) continue;
-			if (p > p_endline) {p = p_endline; continue;};
-			p1 = strchr(p,':') + 2;
-			p = strchr(p1,'"');
-			*p = 0;
-			memcpy(&busStopName[0],p1,sizeof(busStopName)-1);
-			*p = '"';
-			DEBUG_SERIAL("busStopName=%s\n",busStopName);
-		}
 		//inbound - outbound
 		p = strstr(p1,"outbound");
 		if (p && p < p_endline) bus_temp.isOutbound = true;
@@ -1956,10 +2062,10 @@ void Get_BusInfor_from_buffer()
 		{
 			Bus_sort[disp_index] = id;
 			Bus[id].display_index = disp_index;
-			memcpy(&Bus[id].route_no[0],bus_temp.route_no,sizeof(Bus[id].route_no)-1);
-			memcpy(&Bus[id].car_no[0],bus_temp.car_no,sizeof(Bus[id].car_no)-1);
-			memcpy(&Bus[id].time_arrival[0],bus_temp.time_arrival,sizeof(Bus[id].time_arrival)-1);
-			memcpy(&Bus[id].passenger[0],bus_temp.passenger,sizeof(Bus[id].passenger)-1);
+			memcpy(&Bus[id].route_no[0],bus_temp.route_no,sizeof(Bus[id].route_no));
+			memcpy(&Bus[id].car_no[0],bus_temp.car_no,sizeof(Bus[id].car_no));
+			memcpy(&Bus[id].time_arrival[0],bus_temp.time_arrival,sizeof(Bus[id].time_arrival));
+			memcpy(&Bus[id].passenger[0],bus_temp.passenger,sizeof(Bus[id].passenger));
 			Bus[id].isOutbound = bus_temp.isOutbound;
 		}
 		DEBUG_SERIAL("Bus %d: index=%d, route_no=%s, car_no=%s, time_arrival=%s, changed=%d, visible=%d\n",id,Bus[id].display_index,Bus[id].route_no,Bus[id].car_no,Bus[id].time_arrival,Bus[id].changed,Bus[id].visible);
@@ -2009,7 +2115,8 @@ void Update_Firmware_fromServer()
 }
 void Process_MQTT()
 {
-	if (WiFi.status() == WL_CONNECTED) {
+	if (WiFi.status() == WL_CONNECTED) 
+	{
 
     if (!psclient.connected() && (millis() - mqtt_timestamp>20000)) {
 
