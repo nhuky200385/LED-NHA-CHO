@@ -150,6 +150,14 @@ uint8_t Comm_Infor=0;
 uint8_t Comm_Error=0;
 uint8_t Get_Error=0;
 //
+
+// cho Ben xe Bui Duong Lich
+String danhsachxe[12] = {"43B-03508","43B-03568","43B-03587","43A-00355"};
+const int gioxuatben[] = {545,615,635,645,715,735,755,815,845,915,945,1015,1030,1115,1215,1315,1330,1400,1430,1500,1515,1545,1615,1635,1655,1715,1735,1755,1815,1830,1850,1930};
+const char* config_bdl = "[{\"c1\":\"3\",\"c2\":\"3\",\"c3\":\"1\",\"c4\":\"2\",\"c5\":\"3\",\"c6\":\"1\",\"c7\":\"2\",\"c8\":\"3\",\"c9\":\"1\",\"c10\":\"2\",\"c11\":\"3\",\"c12\":\"1\",\"c13\":\"2\",\"c14\":\"3\",\"c15\":\"1\",\"c16\":\"2\",\"s1\":\"%tentram%chaychu\",\"s2\":\"1498582141\",\"s3\":\"Tuyến\",\"s4\":\"%kieu1%chaychu\",\"s5\":\"Giờ đi \",\"s6\":\"\",\"s7\":\"\",\"s8\":\"\",\"s9\":\"\",\"s10\":\"\",\"s11\":\"\",\"s12\":\"\",\"s13\":\"\",\"s14\":\"\",\"s15\":\"\",\"s16\":\"\",\"ConfigTime\":\"1234\"}]";
+const char* route_TMF1 = "[{\"busRouteId\":\"2101\",\"routeNo\":\"TMF1\",\"routeName\":\"Bùi Dương Lịch - Xuân Diệu - CV 29-3\",\"distance\":\"19\",\"tripsPerDay\":\"20\",\"firstDepartureTime\":\"06:00 AM\",\"lastDepartureTime\":\"08:45 PM\",\"frequency\":\"30\",\"color\":\"1f3ff2\",\"bendi\":\"Bến xe Bùi Dương Lịch\",\"benden\":\"Công viên 29/3\",\"gia\":\"0\",\"Luotdi\":\"Bùi Dương Lịch – Dương Vân Nga – Khúc Hạo – Hồ Hán Thương – Chu Huy Mân – Cầu Thuận Phước – Đường 3/2 – Bãi đỗ xe Xuân Diệu – Đường 3/2 – Trần Phú – Lý Tự Trọng – Nguyễn Thị Minh Khai – Lê Duẩn – Ngã ba Cai Lang\",\"Luotve\":\"Ngã ba Cai Lang – Lý Thái Tổ - Hùng Vương – Chi lăng – Lê Duẩn – Phan Châu Trinh – Hùng Vương – Bạch Đằng – Đường 3/2 - Bãi đỗ xe Xuân Diệu – Đường 3/2 - Cầu Thuận Phước – Chu Huy Mân – Hồ Hán Thương – Khúc Hạo – Dương Vân Nga – Bùi Dương Lịch\"}]";
+int last_index =-1;
+//
 char* chipID = "BUS_xxxxxxxx"; //xx = Chip ID
 const char* update_path = "/firmware";
 const char* update_username = "admin";
@@ -166,7 +174,7 @@ char sketch_time[14];
 byte stat=0;
 byte LED=13;
 
-char busStopName[200];
+char *busStopName="Bùi Dương Lịch - Xuân Diệu - CV 29-3";
 
 char tempbuffer[160];
 
@@ -537,7 +545,7 @@ void loop() {
 		 else if (Get_Error>=3) Get_Error=0;
 	 //Send_DateTime();
 	 while (Comm_Infor == isBusInfo) {
-		 Get_BusInfor_from_buffer();
+		 //Get_BusInfor_from_buffer();
 		 //
 		 if (BusStopName_sent == false)
 		 {
@@ -946,9 +954,16 @@ bool Get_Config()
 {
 	bool b = false;
 	bisNew_Config = false;
-	Comm_Infor = 0;
-	if (EEData.Interface == from_Ethernet) b= GET_Config_from_Ethernet();
-	else if (EEData.Interface == from_WIFI) b= GET_Config_from_Wifi();
+	Comm_Infor = isBusConfig;
+	//if (!bDateTime_OK)
+	{
+		if (WiFi.status() == WL_CONNECTED) GET_Config_from_Wifi();
+		else GET_Config_from_Ethernet();
+	}
+	// if (EEData.Interface == from_Ethernet) b= GET_Config_from_Ethernet();
+	// else if (EEData.Interface == from_WIFI) b= GET_Config_from_Wifi();
+	memcpy(data_buffer,config_bdl,sizeof(data_buffer)-1);
+	b = true;
 	if (b)
 	{
 		//"ConfigTime":1497078249}
@@ -969,22 +984,88 @@ bool Get_Config()
 }
 bool Get_Infor()
 {
-	Comm_Infor = 0;
-	/* if (bDateTime_OK && EEData.BusStopNo[1] == 0 && EEData.BusStopNo[0] == '0')
-	  {
-		 DEBUG_SERIAL("Not yet config BusStop=%s\n",EEData.BusStopNo);
-		 return false;
-	  } */
-	if (EEData.Interface == from_Ethernet) return GET_Infor_from_Ethernet();
-	else if (EEData.Interface == from_WIFI) return GET_Infor_from_Wifi();
-	else return false;
+	Comm_Infor = isBusInfo;
+	if (!bDateTime_OK)
+	{
+		if (WiFi.status() == WL_CONNECTED) GET_Infor_from_Wifi();
+		else GET_Infor_from_Ethernet();
+	}
+	// if (EEData.Interface == from_Ethernet) return GET_Infor_from_Ethernet();
+	// else if (EEData.Interface == from_WIFI) return GET_Infor_from_Wifi();
+	// else return false;
+	int now_hmm = rtc.hour * 100 + rtc.minute;
+	DEBUG_SERIAL("now_hmm=%d\n",now_hmm);
+	int len = sizeof(gioxuatben)/sizeof(gioxuatben[0]);
+	int i = 0;
+	int id = 0;
+	for (i=0;i<len;i++)
+	{
+		if (now_hmm < gioxuatben[i]) break;
+	}
+	if (last_index != i)
+	{
+		DEBUG_SERIAL("index=%d\n",i);
+		last_index = i;
+		Bus_count = 0;
+		int count = len - i;
+		if (count>=1)
+		{
+			Bus[Bus_count].display_index = Bus_count;
+			memcpy(&Bus[Bus_count].route_no[0],"TMF1",sizeof(Bus[0].route_no)-1);
+			danhsachxe[i%4].toCharArray(Bus[Bus_count].car_no,sizeof(Bus[0].car_no)-1);
+			sprintf(Bus[Bus_count].time_arrival,"%02d:%02d",gioxuatben[i]/100,gioxuatben[i]%100);
+			memcpy(&Bus[Bus_count].passenger[0],"0",sizeof(Bus[0].passenger)-1);
+			
+			Bus[Bus_count].changed = true;
+			Bus[Bus_count].visible = true;	
+			id = Bus_count;
+			DEBUG_SERIAL("index=%d, route_no=%s, car_no=%s, time_arrival=%s, changed=%d, visible=%d\n",id,Bus[id].route_no,Bus[id].car_no,Bus[id].time_arrival,Bus[id].changed,Bus[id].visible);
+			i+=1;
+			Bus_count += 1;
+			memcpy(&Route[0].route_no[0],"TMF1",sizeof(Route[0].route_no)-1);
+		}
+		if (count>=2)
+		{
+			Bus[Bus_count].display_index = Bus_count;
+			memcpy(&Bus[Bus_count].route_no[0],"TMF1",sizeof(Bus[0].route_no)-1);
+			danhsachxe[i%4].toCharArray(Bus[Bus_count].car_no,sizeof(Bus[0].car_no)-1);
+			sprintf(Bus[Bus_count].time_arrival,"%02d:%02d",gioxuatben[i]/100,gioxuatben[i]%100);
+			memcpy(&Bus[Bus_count].passenger[0],"0",sizeof(Bus[0].passenger)-1);
+			Bus[Bus_count].changed = true;
+			Bus[Bus_count].visible = true;
+			id = Bus_count;
+			DEBUG_SERIAL("index=%d, route_no=%s, car_no=%s, time_arrival=%s, changed=%d, visible=%d\n",id,Bus[id].route_no,Bus[id].car_no,Bus[id].time_arrival,Bus[id].changed,Bus[id].visible);
+			i+=1;
+			Bus_count += 1;
+		}
+		if (count>=3)
+		{
+			Bus[Bus_count].display_index = Bus_count;
+			memcpy(&Bus[Bus_count].route_no[0],"TMF1",sizeof(Bus[0].route_no)-1);
+			danhsachxe[i%4].toCharArray(Bus[Bus_count].car_no,sizeof(Bus[0].car_no)-1);
+			sprintf(Bus[Bus_count].time_arrival,"%02d:%02d",gioxuatben[i]/100,gioxuatben[i]%100);
+			memcpy(&Bus[Bus_count].passenger[0],"0",sizeof(Bus[0].passenger)-1);
+			
+			Bus[Bus_count].changed = true;
+			Bus[Bus_count].visible = true;
+			id = Bus_count;
+			DEBUG_SERIAL("index=%d, route_no=%s, car_no=%s, time_arrival=%s, changed=%d, visible=%d\n",id,Bus[id].route_no,Bus[id].car_no,Bus[id].time_arrival,Bus[id].changed,Bus[id].visible);
+			i+=1;
+			Bus_count += 1;
+		}
+		DEBUG_SERIAL("Bus_count=%d\n",Bus_count);
+	}
+	return true;
 }
 bool Get_Route(char *routeNo)
 {
-	Comm_Infor = 0;
-	if (EEData.Interface == from_Ethernet) return GET_Route_from_Ethernet(routeNo);
-	else if (EEData.Interface == from_WIFI) return GET_Route_from_Wifi(routeNo);
-	else return false;
+	
+	Comm_Infor = isBusRoute;
+	// if (EEData.Interface == from_Ethernet) return GET_Route_from_Ethernet(routeNo);
+	// else if (EEData.Interface == from_WIFI) return GET_Route_from_Wifi(routeNo);
+	// else return false;
+	memcpy(data_buffer,route_TMF1,sizeof(data_buffer)-1);
+	return true;
 }
 bool GET_Config_from_Ethernet()
 {
@@ -1639,6 +1720,7 @@ uint8_t Send_data2display(const char* begin,const char* end)
   if (step == 1)
   {
 	DEBUG_SERIAL("size=%d,BCC=%d\n",size,bcc);
+	//DEBUG_SERIAL("size=%d,BCC=%d,%s\n",size,bcc,data_buffer);
 	displaySerial.printf("size=%d,BCC=%d,",size,bcc);
 	//p = &data_buffer[0];
 	int id=0;	

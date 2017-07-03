@@ -489,7 +489,7 @@ void loop() {
 		}
 	}
 	//Tat hien thi luc 22h den 5h
-	if (rtc.hour >= 22 && rtc.hour < 5) State = 0;
+	if (rtc.hour >= 22 || rtc.hour < 5) State = 0;
 	if (rtc.hour ==5 && rtc.minute < 5) State =1;
 	if (ml - last_update_infor_ts > update_info_timeout)
 	{
@@ -863,9 +863,10 @@ void Get_BusInfor_from_buffer()
 		if (p) bus_temp.isOutbound = true;
 		else bus_temp.isOutbound = false;
 		//
-		if(Compare2array(bus_temp.route_no,Bus[id].route_no))
+		//if(Compare2array(bus_temp.route_no,Bus[id].route_no))
+		if(Compare2array(bus_temp.car_no,Bus[id].car_no))
 		{
-			if(Compare2array(bus_temp.car_no,Bus[id].car_no) == false) {debugSerial.println("car_no changed"); Bus[id].changed |= car_no_change;}
+			//if(Compare2array(bus_temp.car_no,Bus[id].car_no) == false) {debugSerial.println("car_no changed"); Bus[id].changed |= car_no_change;}
 			if(Compare2array(bus_temp.time_arrival,Bus[id].time_arrival) == false) {debugSerial.println("time_arrival changed"); Bus[id].changed |= time_change;}
 			if(Compare2array(bus_temp.passenger,Bus[id].passenger) == false) {debugSerial.println("passenger changed"); Bus[id].changed |= passenger_change;}
 			//if (bus_temp.visible != Bus[id].visible) {debugSerial.println("visible changed"); Bus[id].changed |= visible_change;}
@@ -873,7 +874,7 @@ void Get_BusInfor_from_buffer()
 			memcpy(&Bus[id].time_arrival[0],bus_temp.time_arrival,sizeof(Bus[id].time_arrival)-1);
 			memcpy(&Bus[id].passenger[0],bus_temp.passenger,sizeof(Bus[id].passenger)-1);
 			Bus[id].isOutbound = bus_temp.isOutbound;
-			if(Bus[id].bus_name[0]==0 || (Bus[id].changed & car_no_change)>0)
+			if(Bus[id].bus_name[0]==0) // || (Bus[id].changed & car_no_change)>0)
 			{
 				Fill_BusName(id);
 				Bus[id].changed |= text_change;
