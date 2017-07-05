@@ -85,6 +85,8 @@ SoftwareSerial swSer(5,4, false, 256); //RX, TX
 #define Set_time_getInfor "TgetInfor="
 #define Set_time_checkconfig "TcheckConfig="
 #define Show_Config "Config?"
+#define Show_Status "Status?"
+#define whois "???"
 #define StartUp "StartUp"
 #define Begin_BusInfo "BusInfo"
 #define End_BusInfo "End_Info"
@@ -150,6 +152,7 @@ PubSubClient psclient(mqttclient, mqttServerName, mqttport); // for cloud broker
 uint8_t Comm_Infor=0;
 uint8_t Comm_Error=0;
 uint8_t Get_Error=0;
+uint8_t Reset_Ethernet_Count=0;
 //
 char* chipID = "BUS_xxxxxxxx"; //xx = Chip ID
 const char* update_path = "/firmware";
@@ -324,7 +327,7 @@ void Read_Config(bool bdefault)
 	if (EEData.host[0] == 0)
 	{
 		DEBUG_SERIAL("Set to default Config\n");
-		EEData.ethIP = {192,168,1,10};
+		EEData.ethIP = {0,0,0,0}; //DHCP
 		EEData.Interface=from_Ethernet;
 		EEData.time_getInfor = 20; //s
 		EEData.time_checkconfig = 300; //5M
@@ -384,28 +387,62 @@ void SetupWifi()
 }
 void StartEthernet()
 {
+	if (Reset_Ethernet_Count++>=3) 
+	{
+		DEBUG_SERIAL("Reset_Ethernet_Count=%d ->return\n",Reset_Ethernet_Count);
+		if (Reset_Ethernet_Count>13) Reset_Ethernet_Count=0;
+		return;
+	}
 	digitalWrite(Ethernet_RESET_PIN,LOW);
 	delay(500);
 	digitalWrite(Ethernet_RESET_PIN,HIGH);
 	delay(500);
 	Ethernet.init(Ethernet_CS_pin);
 	// start the Ethernet connection:
-  /* if (Ethernet.begin(mac) == 0) {
-    debugSerial.println("Failed to configure Ethernet using DHCP");
-    // no point in carrying on, so do nothing forevermore:
-    // try to congifure using IP address instead of DHCP:
-    Ethernet.begin(mac, EEData.ethIP);
-  } */
- 
-  // start the Ethernet connection and the server:
-  // IPAddress gateway = EEData.ethIP;
-  // gateway[3] = 1;
-  // IPAddress subnet(255, 255, 255, 0);
-  // DEBUG_SERIAL("gateway=%d.%d.%d.%d\n",gateway[0],gateway[1],gateway[2],gateway[3]);  
-  // Ethernet.begin(mac, EEData.ethIP,gateway,subnet);
-  Ethernet.begin(mac, EEData.ethIP);
-  debugSerial.print("Ethernet Shield IP ");
-  debugSerial.println(Ethernet.localIP());
+	if (EEData.ethIP[0]==0)
+	{
+		DEBUG_SERIAL("Configure Ethernet using DHCP ... ");
+	  if (Ethernet.begin(mac) == 0) {
+		DEBUG_SERIAL("Failed\n");
+		//set static ip
+		IPAddress ipstatic(192,168,1,177);
+		IPAddress gateway = ipstatic;
+		gateway[3] = 1;
+		IPAddress subnet(255, 255, 255, 0);
+		DEBUG_SERIAL("gateway=%d.%d.%d.%d\n",gateway[0],gateway[1],gateway[2],gateway[3]);  
+		Ethernet.begin(mac, ipstatic,gateway,subnet);
+	  }
+	  else
+	  {
+		  DEBUG_SERIAL("success\n");
+		  Reset_Ethernet_Count = 0;
+	  }
+	}
+	else
+	{
+	  DEBUG_SERIAL("Configure Ethernet static IP\n");
+	  // start the Ethernet connection and the server:
+	  IPAddress gateway = EEData.ethIP;
+	  gateway[3] = 1;
+	  IPAddress subnet(255, 255, 255, 0);
+	  DEBUG_SERIAL("gateway=%d.%d.%d.%d\n",gateway[0],gateway[1],gateway[2],gateway[3]);
+	  Ethernet.begin(mac, EEData.ethIP,gateway,subnet);
+	  Ethernet.begin(mac, EEData.ethIP);
+	}
+	IPAddress ip = Ethernet.localIP();
+   DEBUG_SERIAL("Ethernet IP: %d.%d.%d.%d\n",ip[0],ip[1],ip[2],ip[3]);
+}
+void printStatus(bool ismqttPub)
+{
+	IPAddress ip = WiFi.localIP();
+	if (WiFi.status() != WL_CONNECTED) ip = WiFi.softAPIP();
+	sprintf(tempbuffer,"WiFi IP: %d.%d.%d.%d\n",ip[0],ip[1],ip[2],ip[3]);
+	if (!ismqttPub) {DEBUG_SERIAL(tempbuffer);} else pubStatus(tempbuffer);
+	ip = Ethernet.localIP();
+	sprintf(tempbuffer,"Ethernet IP: %d.%d.%d.%d\n",ip[0],ip[1],ip[2],ip[3]);
+	if (!ismqttPub) {DEBUG_SERIAL(tempbuffer);} else pubStatus(tempbuffer);
+	sprintf(tempbuffer,"Bus_count=%d\n",Bus_count);
+	if (!ismqttPub) {DEBUG_SERIAL(tempbuffer);} else pubStatus(tempbuffer);
 }
 void setup() {
   //khoi tao truyen thong  
@@ -454,13 +491,11 @@ void setup() {
   //
   Read_Config();
   //
+  StartEthernet();
   SetupWifi();
   //
   SetupTempsensor();
   firstScan=true;
-  //
-  //if (EEData.Interface == from_Ethernet) 
-	  StartEthernet();
   
 #ifdef wClient
   wServer.begin();
@@ -540,7 +575,7 @@ void loop() {
 			 Get_Error=0;
 			 DEBUG_SERIAL("Reset Ethernet Shield\n");
 			 StartEthernet();
-		 }	 
+		 }
 		 else if (Get_Error>=3) Get_Error=0;
 	 //Send_DateTime();
 	 while (Comm_Infor == isBusInfo) {
@@ -667,14 +702,17 @@ void Set_DisplayState(int state)
 void DebugFromDisplay()
 {	int n = 0;
 	tempbuffer[n] = 0;
+	data_buffer[0] =0;
 	if (displaySerial.available())
 	{
 		n=displaySerial.readBytesUntil('\n', tempbuffer, sizeof(tempbuffer));	
 		tempbuffer[n++] = '\n';
 		tempbuffer[n] = 0;
+		sprintf(data_buffer,"[D] %s",tempbuffer);
 	}
-	if (n>0) DEBUG_SERIAL(tempbuffer);
-	if (n>5) pubStatus(tempbuffer);
+	if (n>2) DEBUG_SERIAL(data_buffer);
+	if (n>5) pubStatus(data_buffer);
+	data_buffer[0] =0;
 }
 bool Get_DateTimefrom_buffer()
 {
@@ -704,7 +742,7 @@ if (Serial.available())
 {
 	int chars=Serial.readBytesUntil('\n', com_buffer, sizeof(com_buffer));	
 	com_buffer[chars] = 0;
-	DEBUG_SERIAL(com_buffer);
+	DEBUG_SERIAL("%s\n",com_buffer);
     Process_Com_buffer();
   while (Serial.available()) Serial.read(); //clear serial
 }
@@ -722,6 +760,7 @@ void Wifi_Server()
 		com_buffer_len = wificlient.available();
 		wificlient.readBytes(com_buffer,com_buffer_len);
 		com_buffer[com_buffer_len] =0;
+		DEBUG_SERIAL("%s\n",com_buffer);
 		Process_Com_buffer();
 	}
 }
@@ -817,16 +856,19 @@ void Process_Com_buffer(bool isfrommqtt)
 			p = strstr(com_buffer, Set_EthIP) + sizeof(Set_EthIP) - 1;
 			IPAddress ip;
 			ip[0] = atoi(p);
-			p1 = strchr(p,'.');
-			if (p1==NULL) return; p=p1 + 1;
-			ip[1] = atoi(p);
-			p1 = strchr(p,'.');
-			if (p1==NULL) return; p=p1 + 1;
-			ip[2] = atoi(p);
-			p1 = strchr(p,'.');
-			if (p1==NULL) return; p=p1 + 1;
-			ip[3] = atoi(p);
-			EEData.ethIP = ip;			
+			if (ip[0] > 0)
+			{
+				p1 = strchr(p,'.');
+				if (p1==NULL) return; p=p1 + 1;
+				ip[1] = atoi(p);
+				p1 = strchr(p,'.');
+				if (p1==NULL) return; p=p1 + 1;
+				ip[2] = atoi(p);
+				p1 = strchr(p,'.');
+				if (p1==NULL) return; p=p1 + 1;
+				ip[3] = atoi(p);				
+			}
+			EEData.ethIP = ip;
 			sprintf(tempbuffer,"%s%d.%d.%d.%d\n",Set_EthIP,EEData.ethIP[0],EEData.ethIP[1],EEData.ethIP[2],EEData.ethIP[3]);
 			DEBUG_SERIAL(tempbuffer);
 			Save_Config();
@@ -906,14 +948,20 @@ void Process_Com_buffer(bool isfrommqtt)
 			printConfig(isfrommqtt);
 			tempbuffer[0] = 0;
 		}
+		else if (strstr(com_buffer, Show_Status))
+		{
+			printStatus(isfrommqtt);
+			tempbuffer[0] = 0;
+		}
 		else if (strstr(com_buffer, cm_updatefromserver))
 		{			
 			Update_Firmware_fromServer();
 			tempbuffer[0] = 0;
 		}
-		else if (strstr(com_buffer,"???") != NULL)
+		else if (strstr(com_buffer,whois) != NULL)
 		{
 			SketchInfor2tempbuffer();
+			DEBUG_SERIAL(tempbuffer);
 		}
 		else if (strstr(com_buffer,Set_Reset_Display) != NULL)
 		{
@@ -959,6 +1007,7 @@ void Reset_Bus()
 	last_ConfigTime = 0;
 	lastGet_timeStamp = 0;
 	BusStopName_sent = false;
+	Reset_Ethernet_Count = 0;
 	lastCheckConfig_timeStamp = millis();
 }
 bool Get_Config()
@@ -2255,7 +2304,7 @@ void onMessageArrived(const MQTT::Publish& sub) {
   //DEBUG_SERIAL("topic=%s\npayload=%s\n",topic.c_str(),payload.c_str());
   DEBUG_SERIAL("from MQTT payload=%s\n",payload.c_str());
   
-  if (topic == broadcast_topic && payload == "???")
+  if (topic == broadcast_topic && payload == whois)
   {
 	  SketchInfor2tempbuffer();
   }

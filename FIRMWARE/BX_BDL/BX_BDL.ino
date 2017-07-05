@@ -86,6 +86,8 @@ SoftwareSerial swSer(5,4, false, 256); //RX, TX
 #define Set_time_getInfor "TgetInfor="
 #define Set_time_checkconfig "TcheckConfig="
 #define Show_Config "Config?"
+#define Show_Status "Status?"
+#define whois "???"
 #define StartUp "StartUp"
 #define Begin_BusInfo "BusInfo"
 #define End_BusInfo "End_Info"
@@ -136,8 +138,7 @@ String topic = "";
 String payload = "";
 
 uint32_t mqtt_timestamp;
-WiFiClient mqttclient;
-//EthernetClient mqttclient;
+
 String mqttServerName = "m20.cloudmqtt.com";
 int    mqttport = 14409;
 String mqttuser =  "test";
@@ -146,17 +147,20 @@ String mqttpass =  "test";
 // int    mqttport = 1883;
 // String mqttuser =  "";
 // String mqttpass =  "";
-PubSubClient psclient(mqttclient, mqttServerName, mqttport); // for cloud broker - by hostname
+WiFiClient wmqttclient;
+//EthernetClient emqttclient;
+PubSubClient psclient(wmqttclient, mqttServerName, mqttport); // for cloud broker - by hostname
 
 uint8_t Comm_Infor=0;
 uint8_t Comm_Error=0;
 uint8_t Get_Error=0;
+uint8_t Reset_Ethernet_Count=0;
 //
 
 // cho Ben xe Bui Duong Lich
 String danhsachxe[12] = {"43B-03508","43B-03568","43B-03587","43A-00355"};
 const int gioxuatben[] = {545,615,635,645,715,735,755,815,845,915,945,1015,1030,1115,1215,1315,1330,1400,1430,1500,1515,1545,1615,1635,1655,1715,1735,1755,1815,1830,1850,1930};
-const char* config_bdl = "[{\"c1\":\"3\",\"c2\":\"3\",\"c3\":\"1\",\"c4\":\"2\",\"c5\":\"3\",\"c6\":\"1\",\"c7\":\"2\",\"c8\":\"3\",\"c9\":\"1\",\"c10\":\"2\",\"c11\":\"3\",\"c12\":\"1\",\"c13\":\"2\",\"c14\":\"3\",\"c15\":\"1\",\"c16\":\"2\",\"s1\":\"%tentram%chaychu\",\"s2\":\"1498582141\",\"s3\":\"Tuyến\",\"s4\":\"%kieu1%chaychu\",\"s5\":\"Giờ đi \",\"s6\":\"\",\"s7\":\"\",\"s8\":\"\",\"s9\":\"\",\"s10\":\"\",\"s11\":\"\",\"s12\":\"\",\"s13\":\"\",\"s14\":\"\",\"s15\":\"\",\"s16\":\"\",\"ConfigTime\":1234}]";
+const char* config_bdl = "[{\"c1\":\"2\",\"c2\":\"3\",\"c3\":\"1\",\"c4\":\"2\",\"c5\":\"3\",\"c6\":\"1\",\"c7\":\"2\",\"c8\":\"3\",\"c9\":\"1\",\"c10\":\"2\",\"c11\":\"3\",\"c12\":\"1\",\"c13\":\"2\",\"c14\":\"3\",\"c15\":\"1\",\"c16\":\"2\",\"s1\":\"%tentram%chaychu\",\"s2\":\"1498582141\",\"s3\":\"Tuyến\",\"s4\":\"%kieu1%chaychu\",\"s5\":\"Giờ đi \",\"s6\":\"\",\"s7\":\"\",\"s8\":\"\",\"s9\":\"\",\"s10\":\"\",\"s11\":\"\",\"s12\":\"\",\"s13\":\"\",\"s14\":\"\",\"s15\":\"\",\"s16\":\"\",\"ConfigTime\":1234}]";
 const char* route_TMF1 = "[{\"busRouteId\":\"2101\",\"routeNo\":\"TMF1\",\"routeName\":\"Bùi Dương Lịch - Xuân Diệu - CV 29-3\",\"distance\":\"19\",\"tripsPerDay\":\"20\",\"firstDepartureTime\":\"06:00 AM\",\"lastDepartureTime\":\"08:45 PM\",\"frequency\":\"30\",\"color\":\"1f3ff2\",\"bendi\":\"Bến xe Bùi Dương Lịch\",\"benden\":\"Công viên 29/3\",\"gia\":\"0\",\"Luotdi\":\"Bùi Dương Lịch – Dương Vân Nga – Khúc Hạo – Hồ Hán Thương – Chu Huy Mân – Cầu Thuận Phước – Đường 3/2 – Bãi đỗ xe Xuân Diệu – Đường 3/2 – Trần Phú – Lý Tự Trọng – Nguyễn Thị Minh Khai – Lê Duẩn – Ngã ba Cai Lang\",\"Luotve\":\"Ngã ba Cai Lang – Lý Thái Tổ - Hùng Vương – Chi lăng – Lê Duẩn – Phan Châu Trinh – Hùng Vương – Bạch Đằng – Đường 3/2 - Bãi đỗ xe Xuân Diệu – Đường 3/2 - Cầu Thuận Phước – Chu Huy Mân – Hồ Hán Thương – Khúc Hạo – Dương Vân Nga – Bùi Dương Lịch\"}]";
 int last_index =-1;
 //
@@ -176,7 +180,7 @@ char sketch_time[14];
 byte stat=0;
 byte LED=13;
 
-char *busStopName="Bùi Dương Lịch - Xuân Diệu - CV 29-3";
+char *busStopName="Bến xe Bùi Dương Lịch";
 
 char tempbuffer[160];
 
@@ -334,7 +338,7 @@ void Read_Config(bool bdefault)
 	if (EEData.host[0] == 0)
 	{
 		DEBUG_SERIAL("Set to default Config\n");
-		EEData.ethIP = {192,168,1,10};
+		EEData.ethIP = {0,0,0,0}; //DHCP
 		EEData.Interface=from_Ethernet;
 		EEData.time_getInfor = 20; //s
 		EEData.time_checkconfig = 300; //5M
@@ -394,28 +398,63 @@ void SetupWifi()
 }
 void StartEthernet()
 {
+	if (Reset_Ethernet_Count++>=3) 
+	{
+		DEBUG_SERIAL("Reset_Ethernet_Count=%d ->return\n",Reset_Ethernet_Count);
+		if (Reset_Ethernet_Count>13) Reset_Ethernet_Count=0;
+		return;
+	}
 	digitalWrite(Ethernet_RESET_PIN,LOW);
 	delay(500);
 	digitalWrite(Ethernet_RESET_PIN,HIGH);
 	delay(500);
 	Ethernet.init(Ethernet_CS_pin);
 	// start the Ethernet connection:
-  /* if (Ethernet.begin(mac) == 0) {
-    debugSerial.println("Failed to configure Ethernet using DHCP");
-    // no point in carrying on, so do nothing forevermore:
-    // try to congifure using IP address instead of DHCP:
-    Ethernet.begin(mac, ip);
-  } */
- 
-  // start the Ethernet connection and the server:
-  // IPAddress gateway = EEData.ethIP;
-  // gateway[3] = 1;
-  // IPAddress subnet(255, 255, 255, 0);
-  // DEBUG_SERIAL("gateway=%d.%d.%d.%d\n",gateway[0],gateway[1],gateway[2],gateway[3]);  
-  // Ethernet.begin(mac, EEData.ethIP,gateway,subnet);
-  Ethernet.begin(mac, EEData.ethIP);
-  debugSerial.print("Ethernet Shield IP ");
-  debugSerial.println(Ethernet.localIP());
+	if (EEData.ethIP[0]==0)
+	{
+		DEBUG_SERIAL("Configure Ethernet using DHCP ... ");
+	  if (Ethernet.begin(mac) == 0) {
+		DEBUG_SERIAL("Failed\n");
+		//set static ip
+		IPAddress ipstatic(192,168,1,177);
+		IPAddress gateway = ipstatic;
+		gateway[3] = 1;
+		IPAddress subnet(255, 255, 255, 0);
+		DEBUG_SERIAL("gateway=%d.%d.%d.%d\n",gateway[0],gateway[1],gateway[2],gateway[3]);  
+		Ethernet.begin(mac, ipstatic,gateway,subnet);
+	  }
+	  else
+	  {
+		  DEBUG_SERIAL("success\n");
+		  Reset_Ethernet_Count = 0;
+	  }
+	}
+	else
+	{
+	  DEBUG_SERIAL("Configure Ethernet static IP\n");
+	  // start the Ethernet connection and the server:
+	  IPAddress gateway = EEData.ethIP;
+	  gateway[3] = 1;
+	  IPAddress subnet(255, 255, 255, 0);
+	  DEBUG_SERIAL("gateway=%d.%d.%d.%d\n",gateway[0],gateway[1],gateway[2],gateway[3]);
+	  Ethernet.begin(mac, EEData.ethIP,gateway,subnet);
+	  Ethernet.begin(mac, EEData.ethIP);
+	}
+	IPAddress ip = Ethernet.localIP();
+   DEBUG_SERIAL("Ethernet IP: %d.%d.%d.%d\n",ip[0],ip[1],ip[2],ip[3]);
+
+}
+void printStatus(bool ismqttPub)
+{
+	IPAddress ip = WiFi.localIP();
+	if (WiFi.status() != WL_CONNECTED) ip = WiFi.softAPIP();
+	sprintf(tempbuffer,"WiFi IP: %d.%d.%d.%d\n",ip[0],ip[1],ip[2],ip[3]);
+	if (!ismqttPub) {DEBUG_SERIAL(tempbuffer);} else pubStatus(tempbuffer);
+	ip = Ethernet.localIP();
+	sprintf(tempbuffer,"Ethernet IP: %d.%d.%d.%d\n",ip[0],ip[1],ip[2],ip[3]);
+	if (!ismqttPub) {DEBUG_SERIAL(tempbuffer);} else pubStatus(tempbuffer);
+	sprintf(tempbuffer,"Bus_count=%d\n",Bus_count);
+	if (!ismqttPub) {DEBUG_SERIAL(tempbuffer);} else pubStatus(tempbuffer);
 }
 void setup() {
   //khoi tao truyen thong  
@@ -464,13 +503,11 @@ void setup() {
   //
   Read_Config();
   //
+  StartEthernet();
   SetupWifi();
   //
   SetupTempsensor();
   firstScan=true;
-  //
-  //if (EEData.Interface == from_Ethernet) 
-	  StartEthernet();
   
 #ifdef wClient
   wServer.begin();
@@ -479,7 +516,7 @@ void setup() {
   //
   delay(3000);
   Startup_timestamp = millis();
-
+ Reset_display();
 }
 //******************************************************************************************************
 
@@ -668,16 +705,20 @@ void Set_DisplayState(int state)
 	displaySerial.println(state);
 }
 void DebugFromDisplay()
-{	int n = 0;
+{
+	int n = 0;
 	tempbuffer[n] = 0;
+	data_buffer[0] =0;
 	if (displaySerial.available())
 	{
 		n=displaySerial.readBytesUntil('\n', tempbuffer, sizeof(tempbuffer));	
 		tempbuffer[n++] = '\n';
 		tempbuffer[n] = 0;
+		sprintf(data_buffer,"[D] %s",tempbuffer);
 	}
-	if (n>0) DEBUG_SERIAL(tempbuffer);
-	if (n>5) pubStatus(tempbuffer);
+	if (n>2) DEBUG_SERIAL(data_buffer);
+	if (n>5) pubStatus(data_buffer);
+	data_buffer[0] =0;
 }
 bool Get_DateTimefrom_buffer()
 {
@@ -726,6 +767,7 @@ void Wifi_Server()
 		com_buffer_len = wificlient.available();
 		wificlient.readBytes(com_buffer,com_buffer_len);
 		com_buffer[com_buffer_len] =0;
+		DEBUG_SERIAL("%s\n",com_buffer);
 		Process_Com_buffer();
 	}
 }
@@ -821,15 +863,18 @@ void Process_Com_buffer(bool isfrommqtt)
 			p = strstr(com_buffer, Set_EthIP) + sizeof(Set_EthIP) - 1;
 			IPAddress ip;
 			ip[0] = atoi(p);
-			p1 = strchr(p,'.');
-			if (p1==NULL) return; p=p1 + 1;
-			ip[1] = atoi(p);
-			p1 = strchr(p,'.');
-			if (p1==NULL) return; p=p1 + 1;
-			ip[2] = atoi(p);
-			p1 = strchr(p,'.');
-			if (p1==NULL) return; p=p1 + 1;
-			ip[3] = atoi(p);
+			if (ip[0] > 0)
+			{
+				p1 = strchr(p,'.');
+				if (p1==NULL) return; p=p1 + 1;
+				ip[1] = atoi(p);
+				p1 = strchr(p,'.');
+				if (p1==NULL) return; p=p1 + 1;
+				ip[2] = atoi(p);
+				p1 = strchr(p,'.');
+				if (p1==NULL) return; p=p1 + 1;
+				ip[3] = atoi(p);				
+			}
 			EEData.ethIP = ip;			
 			sprintf(tempbuffer,"%s%d.%d.%d.%d\n",Set_EthIP,EEData.ethIP[0],EEData.ethIP[1],EEData.ethIP[2],EEData.ethIP[3]);
 			DEBUG_SERIAL(tempbuffer);
@@ -910,6 +955,11 @@ void Process_Com_buffer(bool isfrommqtt)
 			printConfig(isfrommqtt);
 			tempbuffer[0] = 0;
 		}
+		else if (strstr(com_buffer, Show_Status))
+		{
+			printStatus(isfrommqtt);
+			tempbuffer[0] = 0;
+		}
 		else if (strstr(com_buffer, cm_updatefromserver))
 		{			
 			Update_Firmware_fromServer();
@@ -918,6 +968,7 @@ void Process_Com_buffer(bool isfrommqtt)
 		else if (strstr(com_buffer,"???") != NULL)
 		{
 			SketchInfor2tempbuffer();
+			DEBUG_SERIAL(tempbuffer);
 		}
 		else if (strstr(com_buffer,Set_Reset_Display) != NULL)
 		{
@@ -963,6 +1014,7 @@ void Reset_Bus()
 	last_ConfigTime = 0;
 	lastGet_timeStamp = 0;
 	BusStopName_sent = false;
+	Reset_Ethernet_Count = 0;
 	lastCheckConfig_timeStamp = millis();
 }
 bool Get_Config()
@@ -2277,7 +2329,10 @@ void Update_Firmware_fromServer()
 }
 void Process_MQTT()
 {
-	if (WiFi.status() == WL_CONNECTED)
+	#ifdef wmqttclient
+	if (WiFi.status() != WL_CONNECTED) return;
+	#endif
+	
 	{
 
     if (!psclient.connected() && ((millis() - mqtt_timestamp>20000) || mqtt_timestamp==0)) {
@@ -2333,7 +2388,7 @@ void onMessageArrived(const MQTT::Publish& sub) {
   //DEBUG_SERIAL("topic=%s\npayload=%s\n",topic.c_str(),payload.c_str());
   DEBUG_SERIAL("from MQTT payload=%s\n",payload.c_str());
   
-  if (topic == broadcast_topic && payload == "???")
+  if (topic == broadcast_topic && payload == whois)
   {
 	  SketchInfor2tempbuffer();
   }
