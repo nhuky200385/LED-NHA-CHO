@@ -17,7 +17,7 @@
 #include "PubSubClient.h"
 
 #include <SPI.h>
-#include <Ethernet.h>
+#include <Ethernet2.h>
 
 // A UDP instance to let us send and receive packets over UDP
 // WiFiUDP udp;
@@ -28,7 +28,7 @@
 byte mac[] = {
   0xDE, 0xAD, 0xBE, 0xEF, 0xFE, 0xED
 };
-
+const uint8_t Ethernet_CS_pin=15;
 //IPAddress ip(192, 168, 1, 177);
 EthernetClient Eclient;
 int e_bytesRecv;
@@ -103,6 +103,7 @@ SoftwareSerial swSer(5,4, false, 256); //RX, TX
 #define Set_Reset_Display "Reset_Display"
 //#define End_Brightness "End_Brightness"
 #define Set_LostConnection "Set_Connection=0"
+#define Set_display "DISPLAY="
 //#define End_Connection "End_Connection"
 #define CheckSum_Fail "CheckSum_Fail"
 #define CheckSize_Fail "CheckSize_Fail"
@@ -387,12 +388,13 @@ void StartEthernet()
 	delay(500);
 	digitalWrite(Ethernet_RESET_PIN,HIGH);
 	delay(500);
+	Ethernet.init(Ethernet_CS_pin);
 	// start the Ethernet connection:
   /* if (Ethernet.begin(mac) == 0) {
     debugSerial.println("Failed to configure Ethernet using DHCP");
     // no point in carrying on, so do nothing forevermore:
     // try to congifure using IP address instead of DHCP:
-    Ethernet.begin(mac, ip);
+    Ethernet.begin(mac, EEData.ethIP);
   } */
  
   // start the Ethernet connection and the server:
@@ -467,11 +469,16 @@ void setup() {
   //
   delay(3000);
   Startup_timestamp = millis();
-
+  Reset_display();
 }
 //******************************************************************************************************
 
 void loop() {
+	if (bDateTime_OK)
+	{
+		if (rtc.hour >= 22 || rtc.hour < 5) if (display_state == isRunning) Set_DisplayState(0);
+		if (rtc.hour ==5 && rtc.minute < 5) if (display_state == isIdle) Set_DisplayState(1);
+	}
 	if (firstScan)
 	{
 		Check_display_Running();
@@ -479,7 +486,7 @@ void loop() {
 	}
 	wdt_reset();
 	httpServer.handleClient();
-	
+	Process_MQTT();
 	CheckSerial();
 #ifdef wClient
 	Wifi_Server();
@@ -537,6 +544,7 @@ void loop() {
 		 else if (Get_Error>=3) Get_Error=0;
 	 //Send_DateTime();
 	 while (Comm_Infor == isBusInfo) {
+		 Comm_Infor = 0;
 		 Get_BusInfor_from_buffer();
 		 //
 		 if (BusStopName_sent == false)
@@ -560,16 +568,22 @@ void loop() {
 		 if (!Config_sent) break; //loi ko gui dc
 		 //Send Route Infomation
 		 int i=0;
-		 for (i=0;i<Bus_count;i++)
+		 for (i=0;i<Bus_Max;i++)
 		 {
+			// DEBUG_SERIAL("ROUTE=%s,Sent=%d\n",Route[i].route_no,Route[i].route_sent);
 			if (Route[i].route_no[0]==0) break;
+			//if (Compare2array(Route[i].route_no,"TMF1")) Route[i].route_sent = false;
 			if (!Route[i].route_sent)
 			{
 				if (Send_BusRoute(&Route[i].route_no[0]) == 3) Route[i].route_sent = true;
 				else break;
 			}
 		 }
-		 if (Route[i].route_no[0] > 0) break; //loi ko gui dc
+		 if (Route[i].route_no[0] > 0)
+		 {
+			 DEBUG_SERIAL("SEND ROUTE ERR=%s\n",Route[i].route_no);
+			 break; //loi ko gui dc
+		 }
 		 //Send_BusInfor();
 		 bool all_no_change=true;
 		 String s="[";
@@ -643,7 +657,12 @@ if ((display_state == isRunning) && (bisNew_Config || (millis()-lastCheckConfig_
  //
  firstScan=false;
  
- Process_MQTT();
+// Process_MQTT();
+}
+void Set_DisplayState(int state)
+{
+	displaySerial.print(Set_display);
+	displaySerial.println(state);
 }
 void DebugFromDisplay()
 {	int n = 0;
@@ -1514,6 +1533,7 @@ uint8_t Check_display_Running()
 		  tempbuffer[n] = 0;		  
 		  if (strstr(tempbuffer, Running)) {
 		   DEBUG_SERIAL("[DISPLAY] %s\n",Running);
+		   pubStatus(tempbuffer);
 		   ret = true;
 		   display_state = isRunning;
 		   Comm_Error = 0;
@@ -1521,6 +1541,7 @@ uint8_t Check_display_Running()
 		  }
 		  if (strstr(tempbuffer, Idle)) {
 		   DEBUG_SERIAL("[DISPLAY] %s\n",Idle);
+		   pubStatus(tempbuffer);
 		   ret = true;
 		   display_state = isIdle;
 		   Comm_Error = 0;
@@ -1528,6 +1549,7 @@ uint8_t Check_display_Running()
 		  }
 		  if (strstr(tempbuffer, StartUp)) {
 		   DEBUG_SERIAL("[DISPLAY] %s\n", StartUp);
+		   pubStatus(tempbuffer);
 		   display_state = isStartUp;
 		   lastGet_timeStamp = 0;
 		   ret = true;
@@ -2089,7 +2111,7 @@ void Get_BusInfor_from_buffer()
 		{
 			exist = true;
 			Bus[id].visible = true;
-			if(Compare2array(bus_temp.time_arrival,Bus[id].time_arrival) == false) {DEBUG_SERIAL("time_arrival changed\n");Bus[id].changed = true; break;}
+			if(Compare2array(bus_temp.time_arrival,Bus[id].time_arrival) == false) {DEBUG_SERIAL("time_arrival changed\n");Bus[id].changed = true;}
 		}
 		if (!exist)
 		{
@@ -2097,10 +2119,10 @@ void Get_BusInfor_from_buffer()
 			Bus[id].changed = true;
 			Bus[id].visible = true;
 			//DEBUG_SERIAL("New Bus, Bus_count=%d\n",Bus_count);
-			for (int i=0;i<Bus_count;i++)
+			for (int i=0;i<Bus_Max;i++)
 			{
 				//neu da co route -> bo qua
-				if(Compare2array(bus_temp.route_no,Bus[i].route_no)) break;
+				if(Compare2array(bus_temp.route_no,Route[i].route_no)) break;
 				//neu chua co thi them moi
 				if (Route[i].route_no[0]==0)
 				{

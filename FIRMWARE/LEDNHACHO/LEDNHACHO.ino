@@ -475,10 +475,13 @@ void loop() {
 		else
 		{
 			//Tu dong dieu chinh do sang theo thoi gian
-		if (rtc.hour >= 19 && rtc.hour < 6) auto_brightness = 2;
-		else if (rtc.hour >= 18 && rtc.hour < 19) auto_brightness = 5;
-		else if (rtc.hour >= 7 && rtc.hour < 18) auto_brightness = 16;
-		else if (rtc.hour >= 6 && rtc.hour < 7) auto_brightness = 6;
+		if (bDateTime_OK)
+		{
+			if (rtc.hour >= 19 && rtc.hour < 6) auto_brightness = 2;
+			else if (rtc.hour >= 18 && rtc.hour < 19) auto_brightness = 5;
+			else if (rtc.hour >= 7 && rtc.hour < 18) auto_brightness = 16;
+			else if (rtc.hour >= 6 && rtc.hour < 7) auto_brightness = 6;
+		}
 		}		
 		//
 		if (auto_brightness < 1) auto_brightness = 1;
@@ -488,9 +491,12 @@ void loop() {
 			debugSerial.println(matrix.Set_brightness(auto_brightness));
 		}
 	}
-	//Tat hien thi luc 22h den 5h
-	if (rtc.hour >= 22 || rtc.hour < 5) State = 0;
-	if (rtc.hour ==5 && rtc.minute < 5) State =1;
+	//Tat hien thi luc 22h den 5h //SET FROM COMM
+	// if (bDateTime_OK)
+	// {
+		// if (rtc.hour >= 22 || rtc.hour < 5) State = 0;
+		// if (rtc.hour ==5 && rtc.minute < 5) State =1;
+	// }
 	if (ml - last_update_infor_ts > update_info_timeout)
 	{
 		if (Bus_count>0)

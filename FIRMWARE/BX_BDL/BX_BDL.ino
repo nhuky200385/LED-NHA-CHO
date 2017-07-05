@@ -17,7 +17,7 @@
 #include "PubSubClient.h"
 
 #include <SPI.h>
-#include <Ethernet.h>
+#include <Ethernet2.h>
 
 // A UDP instance to let us send and receive packets over UDP
 // WiFiUDP udp;
@@ -28,6 +28,7 @@
 byte mac[] = {
   0xDE, 0xAD, 0xBE, 0xEF, 0xFE, 0xED
 };
+const uint8_t Ethernet_CS_pin=15;
 
 //IPAddress ip(192, 168, 1, 177);
 EthernetClient Eclient;
@@ -103,6 +104,7 @@ SoftwareSerial swSer(5,4, false, 256); //RX, TX
 #define Set_Reset_Display "Reset_Display"
 //#define End_Brightness "End_Brightness"
 #define Set_LostConnection "Set_Connection=0"
+#define Set_display "DISPLAY="
 //#define End_Connection "End_Connection"
 #define CheckSum_Fail "CheckSum_Fail"
 #define CheckSize_Fail "CheckSize_Fail"
@@ -154,7 +156,7 @@ uint8_t Get_Error=0;
 // cho Ben xe Bui Duong Lich
 String danhsachxe[12] = {"43B-03508","43B-03568","43B-03587","43A-00355"};
 const int gioxuatben[] = {545,615,635,645,715,735,755,815,845,915,945,1015,1030,1115,1215,1315,1330,1400,1430,1500,1515,1545,1615,1635,1655,1715,1735,1755,1815,1830,1850,1930};
-const char* config_bdl = "[{\"c1\":\"3\",\"c2\":\"3\",\"c3\":\"1\",\"c4\":\"2\",\"c5\":\"3\",\"c6\":\"1\",\"c7\":\"2\",\"c8\":\"3\",\"c9\":\"1\",\"c10\":\"2\",\"c11\":\"3\",\"c12\":\"1\",\"c13\":\"2\",\"c14\":\"3\",\"c15\":\"1\",\"c16\":\"2\",\"s1\":\"%tentram%chaychu\",\"s2\":\"1498582141\",\"s3\":\"Tuyến\",\"s4\":\"%kieu1%chaychu\",\"s5\":\"Giờ đi \",\"s6\":\"\",\"s7\":\"\",\"s8\":\"\",\"s9\":\"\",\"s10\":\"\",\"s11\":\"\",\"s12\":\"\",\"s13\":\"\",\"s14\":\"\",\"s15\":\"\",\"s16\":\"\",\"ConfigTime\":\"1234\"}]";
+const char* config_bdl = "[{\"c1\":\"3\",\"c2\":\"3\",\"c3\":\"1\",\"c4\":\"2\",\"c5\":\"3\",\"c6\":\"1\",\"c7\":\"2\",\"c8\":\"3\",\"c9\":\"1\",\"c10\":\"2\",\"c11\":\"3\",\"c12\":\"1\",\"c13\":\"2\",\"c14\":\"3\",\"c15\":\"1\",\"c16\":\"2\",\"s1\":\"%tentram%chaychu\",\"s2\":\"1498582141\",\"s3\":\"Tuyến\",\"s4\":\"%kieu1%chaychu\",\"s5\":\"Giờ đi \",\"s6\":\"\",\"s7\":\"\",\"s8\":\"\",\"s9\":\"\",\"s10\":\"\",\"s11\":\"\",\"s12\":\"\",\"s13\":\"\",\"s14\":\"\",\"s15\":\"\",\"s16\":\"\",\"ConfigTime\":1234}]";
 const char* route_TMF1 = "[{\"busRouteId\":\"2101\",\"routeNo\":\"TMF1\",\"routeName\":\"Bùi Dương Lịch - Xuân Diệu - CV 29-3\",\"distance\":\"19\",\"tripsPerDay\":\"20\",\"firstDepartureTime\":\"06:00 AM\",\"lastDepartureTime\":\"08:45 PM\",\"frequency\":\"30\",\"color\":\"1f3ff2\",\"bendi\":\"Bến xe Bùi Dương Lịch\",\"benden\":\"Công viên 29/3\",\"gia\":\"0\",\"Luotdi\":\"Bùi Dương Lịch – Dương Vân Nga – Khúc Hạo – Hồ Hán Thương – Chu Huy Mân – Cầu Thuận Phước – Đường 3/2 – Bãi đỗ xe Xuân Diệu – Đường 3/2 – Trần Phú – Lý Tự Trọng – Nguyễn Thị Minh Khai – Lê Duẩn – Ngã ba Cai Lang\",\"Luotve\":\"Ngã ba Cai Lang – Lý Thái Tổ - Hùng Vương – Chi lăng – Lê Duẩn – Phan Châu Trinh – Hùng Vương – Bạch Đằng – Đường 3/2 - Bãi đỗ xe Xuân Diệu – Đường 3/2 - Cầu Thuận Phước – Chu Huy Mân – Hồ Hán Thương – Khúc Hạo – Dương Vân Nga – Bùi Dương Lịch\"}]";
 int last_index =-1;
 //
@@ -213,6 +215,7 @@ uint32_t time_bk;
 uint32_t last_infor_OK_ts;
 bool bLostconnection;
 uint32_t last_check_update;
+uint32_t last_Get_DateTime_ts;
 
 uint8_t display_state;
 enum
@@ -395,6 +398,7 @@ void StartEthernet()
 	delay(500);
 	digitalWrite(Ethernet_RESET_PIN,HIGH);
 	delay(500);
+	Ethernet.init(Ethernet_CS_pin);
 	// start the Ethernet connection:
   /* if (Ethernet.begin(mac) == 0) {
     debugSerial.println("Failed to configure Ethernet using DHCP");
@@ -480,6 +484,11 @@ void setup() {
 //******************************************************************************************************
 
 void loop() {
+	if (bDateTime_OK)
+	{
+		if (rtc.hour >= 22 || rtc.hour < 5) if (display_state == isRunning) Set_DisplayState(0);
+		if (rtc.hour ==5 && rtc.minute < 5) if (display_state == isIdle) Set_DisplayState(1);
+	}
 	if (firstScan)
 	{
 		Check_display_Running();
@@ -653,6 +662,11 @@ if ((display_state == isRunning) && (bisNew_Config || (millis()-lastCheckConfig_
  
  Process_MQTT();
 }
+void Set_DisplayState(int state)
+{
+	displaySerial.print(Set_display);
+	displaySerial.println(state);
+}
 void DebugFromDisplay()
 {	int n = 0;
 	tempbuffer[n] = 0;
@@ -679,6 +693,7 @@ bool Get_DateTimefrom_buffer()
 		Unixtime_GMT7 = strtoul(++p,NULL,10);
 		Unixtime_GMT7 = Unixtime_GMT7 -(uint32_t)(millis()/1000) + (uint32_t)(u32/1000);
 		Now();
+		last_Get_DateTime_ts = millis();
 		//Set datetime
 		//"02/03/18,09:54:28+40"
 		DEBUG_SERIAL("DateTime: %02d/%02d/%02d %02d:%02d:%02d\n",rtc.year,rtc.month,rtc.day,rtc.hour,rtc.minute,rtc.second);
@@ -955,7 +970,7 @@ bool Get_Config()
 	bool b = false;
 	bisNew_Config = false;
 	Comm_Infor = isBusConfig;
-	//if (!bDateTime_OK)
+	if (millis() - last_Get_DateTime_ts > 3600000)
 	{
 		if (WiFi.status() == WL_CONNECTED) GET_Config_from_Wifi();
 		else GET_Config_from_Ethernet();
@@ -1595,6 +1610,7 @@ uint8_t Check_display_Running()
 		  tempbuffer[n] = 0;		  
 		  if (strstr(tempbuffer, Running)) {
 		   DEBUG_SERIAL("[DISPLAY] %s\n",Running);
+		   pubStatus(tempbuffer);
 		   ret = true;
 		   display_state = isRunning;
 		   Comm_Error = 0;
@@ -1602,6 +1618,7 @@ uint8_t Check_display_Running()
 		  }
 		  if (strstr(tempbuffer, Idle)) {
 		   DEBUG_SERIAL("[DISPLAY] %s\n",Idle);
+		   pubStatus(tempbuffer);
 		   ret = true;
 		   display_state = isIdle;
 		   Comm_Error = 0;
@@ -1609,6 +1626,7 @@ uint8_t Check_display_Running()
 		  }
 		  if (strstr(tempbuffer, StartUp)) {
 		   DEBUG_SERIAL("[DISPLAY] %s\n", StartUp);
+		   pubStatus(tempbuffer);
 		   display_state = isStartUp;
 		   lastGet_timeStamp = 0;
 		   ret = true;
@@ -2179,10 +2197,10 @@ void Get_BusInfor_from_buffer()
 			Bus[id].changed = true;
 			Bus[id].visible = true;
 			//DEBUG_SERIAL("New Bus, Bus_count=%d\n",Bus_count);
-			for (int i=0;i<Bus_count;i++)
+			for (int i=0;i<Bus_Max;i++)
 			{
 				//neu da co route -> bo qua
-				if(Compare2array(bus_temp.route_no,Bus[i].route_no)) break;
+				if(Compare2array(bus_temp.route_no,Route[i].route_no)) break;
 				//neu chua co thi them moi
 				if (Route[i].route_no[0]==0)
 				{
