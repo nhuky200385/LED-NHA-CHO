@@ -147,8 +147,8 @@ String mqttpass =  "test";
 // int    mqttport = 1883;
 // String mqttuser =  "";
 // String mqttpass =  "";
-WiFiClient wmqttclient;
-//EthernetClient emqttclient;
+//WiFiClient wmqttclient;
+EthernetClient emqttclient;
 PubSubClient psclient(wmqttclient, mqttServerName, mqttport); // for cloud broker - by hostname
 
 uint8_t Comm_Infor=0;
@@ -220,6 +220,7 @@ uint32_t last_infor_OK_ts;
 bool bLostconnection;
 uint32_t last_check_update;
 uint32_t last_Get_DateTime_ts;
+uint32_t setup_wifi_timestamp;
 
 uint8_t display_state;
 enum
@@ -364,6 +365,7 @@ void Save_Config()
 }
 void SetupWifi()
 {
+	setup_wifi_timestamp = millis();
 	if (EEData.WiFi_Name[0] != 0)
 	{
 	 WiFi.mode(WIFI_AP_STA);
@@ -378,11 +380,12 @@ void SetupWifi()
 		if (count--<=0) break;
 		wdt_reset();
 	  }
+	  if (WiFi.status() != WL_CONNECTED) WiFi.softAP(chipID, password_ap,2,0);
 	}
 	if (EEData.WiFi_Name[0] == 0 || WiFi.status() != WL_CONNECTED)
 	{
 		WiFi.mode(WIFI_STA);
-		WiFi.softAP(chipID, password_ap);
+		WiFi.softAP(chipID, password_ap,2,0);
 	}
 	  //
 	  IPAddress ip = WiFi.localIP();
@@ -557,6 +560,7 @@ void loop() {
 	  DEBUG_SERIAL("%02d:%02d:%02d\n",rtc.hour,rtc.minute,rtc.second);	  
 	  if (Check_display_Running()>=6) Reset_display();
 	  if (display_state == isStartUp) bGet_condition = true;
+	  CheckWifi_connection();
   }
   if ((millis()-lastGet_timeStamp)>(EEData.time_getInfor*1000) || firstScan) 
   {
@@ -698,6 +702,15 @@ if ((display_state == isRunning) && (bisNew_Config || (millis()-lastCheckConfig_
  firstScan=false;
  
  Process_MQTT();
+}
+void CheckWifi_connection()
+{
+	if (EEData.WiFi_Name[0] == 0) return;
+	if (WiFi.status() != WL_CONNECTED)
+	{
+		if(millis() - setup_wifi_timestamp > 1800000) SetupWifi(); //30 phut = 30*60000
+	}
+	else setup_wifi_timestamp = millis();
 }
 void Set_DisplayState(int state)
 {
@@ -1016,6 +1029,7 @@ void Reset_Bus()
 	BusStopName_sent = false;
 	Reset_Ethernet_Count = 0;
 	lastCheckConfig_timeStamp = millis();
+	last_index = -1;
 }
 bool Get_Config()
 {
@@ -1664,6 +1678,7 @@ uint8_t Check_display_Running()
 		   DEBUG_SERIAL("[DISPLAY] %s\n",Running);
 		   pubStatus(tempbuffer);
 		   ret = true;
+		   if (display_state == isIdle) Reset_Bus();
 		   display_state = isRunning;
 		   Comm_Error = 0;
 		   break;

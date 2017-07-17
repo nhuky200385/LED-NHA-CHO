@@ -41,6 +41,7 @@
 #define isBusStop 7
 
 uint8_t State=1;
+uint8_t Last_State=0;
 
 uint8_t Comm_Infor=0;
 uint32_t timeout;
@@ -52,7 +53,7 @@ const uint32_t businfo_swap_ts = 10000; //10s
 uint32_t flash_ts,brightness_ts,businfo_ts,station_ts;
 uint8_t businfo_index=0;
 uint32_t last_update_infor_ts;
-const uint32_t update_info_timeout = 300000; //5M
+const uint32_t update_info_timeout = 300000; //5M 300000
 uint32_t last_ConfigTime = 0;
 
 #include "Adafruit_GFX.h"
@@ -96,6 +97,7 @@ uint8_t auto_brightness;
 bool auto_adjust_brightness=true;
 bool bstartup;
 bool bDateTime_OK = false;
+bool bisBusStation = false; //Tram dung hoac Ben Xe
 uint8_t route_infor_Stype=1;
 uint8_t route_infor_Step=0;
 enum
@@ -111,7 +113,8 @@ char disp_infor[1003];
 bool bisCommonInfor;
 char waitData[]={"ĐANG KẾT NỐI ĐẾN SERVER, VUI LÒNG CHỜ!"};
 char lostConnection[]={"MẤT KẾT NỐI ĐẾN SERVER"};
-char nobus[]={"HIỆN TẠI KHÔNG CÓ XE NÀO SẮP ĐẾN NHÀ CHỜ NÀY "};
+char nobus[]={"HIỆN TẠI KHÔNG CÓ XE BUÝT NÀO SẮP ĐẾN NHÀ CHỜ NÀY "};
+char nobus_bx[]={"HIỆN TẠI KHÔNG CÓ XE BUÝT NÀO SẮP XUẤT BẾN "};
 char bendi[] = {"Đ.đầu"};
 char benden[] = {"Đ.cuối"};
 
@@ -177,7 +180,7 @@ line_struct Line[]
 	{0,16,127,16,YELLOW},
 	{0,30,127,30,GREEN},
 	 {0,45,127,45,GREEN},
-	 {0,60,127,60,GREEN},
+	 {0,60,127,60,GREEN}, //
 	{0,75,127,75,YELLOW},
 	//{43,31,43,70,GREEN},
 	//{95,31,95,70,GREEN},
@@ -301,6 +304,8 @@ void Frame_Config()
 	Frame[froutecode] = {0,16,42,15,RED,LEFT,&Tahoma_8B,&Tahoma_8BVN,&route_code_text[0],false,0}; //2
 	Frame[froute_info] = {42,16,45,15,GREEN,CENTER,&Tahoma_8B,&Tahoma_8BVN,&route_info_text[0],false,0}; //3
 	Frame[ftime_arrival] = {87,16,42,15,YELLOW,RIGHT,&Tahoma_8B,&Tahoma_8BVN,&time_arrival_text[0],false,0}; //4
+	// Frame[froute_info] = {42,16,14,15,GREEN,CENTER,&Tahoma_8B,&Tahoma_8BVN,&route_info_text[0],false,0}; //3  cho ben
+	// Frame[ftime_arrival] = {56,16,73,15,YELLOW,RIGHT,&Tahoma_8B,&Tahoma_8BVN,&time_arrival_text[0],false,0}; //4
 	//
 	Frame[frow1_c1] = {1,31,22,15,RED,CENTER,&Tahoma_8B,&Tahoma_8BVN,&Bus[0].route_no[0],false,-1}; //5
 	Frame[frow1_c2] = {23,31,73,15,GREEN,LEFT,&Tahoma_8,&Tahoma_8VN,&Bus[0].bus_name[0],true,-1,true,true}; //6
@@ -497,17 +502,32 @@ void loop() {
 		// if (rtc.hour >= 22 || rtc.hour < 5) State = 0;
 		// if (rtc.hour ==5 && rtc.minute < 5) State =1;
 	// }
-	if (ml - last_update_infor_ts > update_info_timeout)
+	if (State != Last_State)
+	{
+		Last_State = State;
+		if (State == 0)
+		{
+			Bus_count = 0;
+			debugSerial.println(F("IDLE ClearBusInfor"));
+			CommSerial.println(F("IDLE ClearBusInfor"));
+			Frame[finfor].text = NULL;
+			Frame[finfor].changed = text_change;
+			ClearBusInfor();
+		}
+		else last_update_infor_ts = millis();
+	}
+	if (State == 1 && ml - last_update_infor_ts > update_info_timeout)
 	{
 		if (Bus_count>0)
 		{
 			Bus_count = 0;
 			debugSerial.println(F("BusInfor Timeout"));
+			CommSerial.println(F("BusInfor Timeout"));
 			Frame[finfor].text = &lostConnection[0];
 			Frame[finfor].changed = text_change;
 			ClearBusInfor();
 		}
-	}
+	}	
 	Scroll_process();
 	// if (b) 
 	// {
@@ -936,8 +956,9 @@ next_:
 	if (bisCommonInfor == false)
 	{
 		if (Bus_count == 0)
-		{
-			Frame[finfor].text = &nobus[0];
+		{			
+			if (bisBusStation) Frame[finfor].text = &nobus_bx[0];
+			else Frame[finfor].text = &nobus[0];
 			if (Frame[froute_index].w >0)
 			{
 				Frame[froute_index].w = 0;
@@ -1116,6 +1137,7 @@ void Get_BusConfig_from_buffer()
 					else //if (Compare2array(p1,&disp_infor[0]) == false)
 					{
 						debugSerial.println(F("bisCommonInfor"));
+						CommSerial.println(F("bisCommonInfor"));
 						bisCommonInfor =  true;
 						memcpy(&disp_infor[0],p1,sizeof(disp_infor)-1);
 						Frame[finfor].text = &disp_infor[0];
@@ -1265,6 +1287,7 @@ void Get_Route_from_buffer()
 	if (index == Route_Max) 
 	{
 		debugSerial.println(F("Over Route"));
+		CommSerial.println(F("Over Route"));
 		return;
 	}
 	//debugSerial.print("index="); debugSerial.println(index);
@@ -1342,7 +1365,12 @@ void Get_BusStopName()
 	Comm_Infor = isBusIdle;
 	//debugSerial.println(comm_buffer);
 	p = strstr(comm_buffer,"BusStopNo=");
-	if (p == NULL) return;
+	if (p == NULL)
+	{
+		p = strstr(comm_buffer,"BusStationNo=");
+		if (p == NULL) return;
+		bisBusStation = true;
+	}
 	p1 = strchr(p,'=') + 1;
 	p = strchr(p1,';');
 	*p = 0;
