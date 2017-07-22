@@ -1589,6 +1589,7 @@ void Reset_all_Data()
 	ClearBusInfor();
 	last_ConfigTime = 0;
 	bstartup = true;
+	State = 1;
 }
 void convert2upperChar(char *ch)
 {

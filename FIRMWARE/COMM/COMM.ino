@@ -1,6 +1,6 @@
 // compiled path C:\Users\LT-N2K\AppData\Local\Temp
 //ChipID
-//Cong vien hung vuong: BUS_376F07
+//Cong vien hung vuong: BUS_376F07 // BUS_06D780
 //DD Chung cu 4A Chu Huy Man: BUS_06DB02
 //Ben xe Bui Duong Lich: BUS_06D780  // BUS_3773DC
 #include <memory>
@@ -161,8 +161,11 @@ const char* update_password = "admin";
 //
 const char* password_ap = "13245768";
 
+byte Update_from = 0;
+const char *host_update = "n2k16.esy.es";
 const char *firmware_server_name ="http://n2k16.esy.es/bus/";
 const char *check4update = "check4update.php";
+const char *folder_update = "/bus/";
 
 char *sketch_name ="xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx.ino";//
 char sketch_time[14];
@@ -187,10 +190,10 @@ HTTPClient http;
 #define RST_NORMAL HIGH  //LOW,HIGH
 #define LEVEL_ON LOW
 
-unsigned long Startup_timestamp;
-unsigned long lastGet_timeStamp;
-unsigned long lastSent_timeStamp;
-unsigned long lastCheckConfig_timeStamp;
+uint32_t Startup_timestamp;
+uint32_t lastGet_timeStamp;
+uint32_t lastSent_timeStamp;
+uint32_t lastCheckConfig_timeStamp;
 
 bool PW_On=false;
 bool AP_On=false;
@@ -209,7 +212,7 @@ uint32_t time_bk;
 uint32_t last_infor_OK_ts;
 bool bLostconnection;
 uint32_t last_check_update;
-uint32_t setup_wifi_timestamp;
+uint32_t setup_wifi_timestamp,setup_eth_timestamp;
 
 uint8_t display_state;
 enum
@@ -357,6 +360,7 @@ void SetupWifi()
 	setup_wifi_timestamp = millis();
 	if (EEData.WiFi_Name[0] != 0)
 	{
+		WiFi.disconnect();
 	 WiFi.mode(WIFI_AP_STA);
 	 int count =20;
 	  //
@@ -515,7 +519,7 @@ void loop() {
 	if (bDateTime_OK)
 	{
 		if (rtc.hour >= 22 || rtc.hour < 5) if (display_state == isRunning) Set_DisplayState(0);
-		if (rtc.hour ==5 && rtc.minute < 5) if (display_state == isIdle) Set_DisplayState(1);
+		if (rtc.hour ==5 && rtc.minute < 5) if (display_state == isIdle) { Set_DisplayState(1); ESP.restart();}
 	}
 	if (firstScan)
 	{
@@ -535,7 +539,11 @@ void loop() {
   //auto check4update
   if (bDateTime_OK && rtc.minute == 0 && rtc.second<=2) 
   {
-	  if (millis() - last_check_update > 5000) Update_Firmware_fromServer();
+	  if (millis() - last_check_update > 5000)
+	  {
+		  Update_from = EEData.Interface;
+		  Update_Firmware_fromServer();
+	  }
   }
   if (bDateTime_OK && (time < unixTime_sent || time - unixTime_sent >300))
   {
@@ -549,10 +557,11 @@ void loop() {
 	  if (Check_display_Running()>=6) Reset_display();
 	  if (display_state == isStartUp) bGet_condition = true;
 	  CheckWifi_connection();
+	  Check_Ethernet_connection();
   }
   if ((millis()-lastGet_timeStamp)>(EEData.time_getInfor*1000) || firstScan) 
   {
-	   if (display_state == isRunning) 
+	   if (display_state == isRunning || bDateTime_OK == false)
 	   {
 		   bGet_condition = true;
 		//DEBUG_SERIAL("bGet_condition=1\n");
@@ -658,6 +667,7 @@ void loop() {
 		s += "]";
 		s.toCharArray(data_buffer,sizeof(data_buffer)-1);
 		DEBUG_SERIAL("%s\n",data_buffer);
+		if (Bus_count==0) all_no_change = false;
 		if (all_no_change == false || (millis()-lastSent_timeStamp)>=60000) //1M
 		{
 			if (Send_data2display(Begin_BusInfo,End_BusInfo))
@@ -698,6 +708,10 @@ if ((display_state == isRunning) && (bisNew_Config || (millis()-lastCheckConfig_
  
 // Process_MQTT();
 }
+void Check_Ethernet_connection()
+{	
+	if(millis() - setup_eth_timestamp > 43200000) StartEthernet();
+}
 void CheckWifi_connection()
 {
 	if (EEData.WiFi_Name[0] == 0) return;
@@ -705,7 +719,8 @@ void CheckWifi_connection()
 	{
 		if(millis() - setup_wifi_timestamp > 1800000) SetupWifi(); //30 phut = 30*60000
 	}
-	else setup_wifi_timestamp = millis();
+	else if(millis() - setup_wifi_timestamp > 43200000) SetupWifi(); //12h = 12*60*60000
+	//else setup_wifi_timestamp = millis();
 }
 void Set_DisplayState(int state)
 {
@@ -968,6 +983,14 @@ void Process_Com_buffer(bool isfrommqtt)
 		}
 		else if (strstr(com_buffer, cm_updatefromserver))
 		{			
+			//=1
+			p = strstr(com_buffer, cm_updatefromserver) + sizeof(cm_updatefromserver);
+			if (*p>0)
+			{
+				Update_from = atoi(p);				
+			}
+			else Update_from = EEData.Interface;
+			DEBUG_SERIAL("\nCheck Update from %s\n",Update_from == from_Ethernet ? "Ethernet" : "WIFI");
 			Update_Firmware_fromServer();
 			tempbuffer[0] = 0;
 		}
@@ -979,6 +1002,10 @@ void Process_Com_buffer(bool isfrommqtt)
 		else if (strstr(com_buffer,Set_Reset_Display) != NULL)
 		{
 			Reset_display();			
+		}
+		else if (strstr(com_buffer,Set_display) != NULL)
+		{
+			displaySerial.println(com_buffer);			
 		}
 		else
 		{
@@ -1207,12 +1234,12 @@ bool GET_Route_from_Ethernet(char* routeNo)
   if (e_bytesRecv>0) return true;
   else return false;
 }
-int handleHeaderResponse(EthernetClient cli,const unsigned long getTimeout)
+int handleHeaderResponse(EthernetClient cli,const uint32_t getTimeout)
 {
     //String transferEncoding;
     int _returnCode = -1;
     int _size = -1;
-    unsigned long lastDataTime = millis();
+    uint32_t lastDataTime = millis();
 	e_bytesRecv=0;
 	header_time = "";
     while(1) {
@@ -1441,12 +1468,12 @@ bool GET_Route_from_Wifi(char *routeNo)
   if (e_bytesRecv>0) return true;
   else return false;
 }
-int handleHeaderResponse(WiFiClient cli,const unsigned long getTimeout)
+int handleHeaderResponse(WiFiClient cli,const uint32_t getTimeout)
 {
     //String transferEncoding;
     int _returnCode = -1;
     int _size = -1;
-    unsigned long lastDataTime = millis();
+    uint32_t lastDataTime = millis();
 	e_bytesRecv=0;
 	header_time = "";
     while(1) {
@@ -1595,7 +1622,7 @@ uint8_t Check_display_Running()
 		  tempbuffer[n] = 0;		  
 		  if (strstr(tempbuffer, Running)) {
 		   DEBUG_SERIAL("[DISPLAY] %s\n",Running);
-		   pubStatus(tempbuffer);
+		   pubStatus_addtime(tempbuffer);
 		   ret = true;
 		   if (display_state == isIdle) Reset_Bus();
 		   display_state = isRunning;
@@ -1604,7 +1631,7 @@ uint8_t Check_display_Running()
 		  }
 		  if (strstr(tempbuffer, Idle)) {
 		   DEBUG_SERIAL("[DISPLAY] %s\n",Idle);
-		   pubStatus(tempbuffer);
+		   pubStatus_addtime(tempbuffer);
 		   ret = true;
 		   display_state = isIdle;
 		   Comm_Error = 0;
@@ -1612,7 +1639,7 @@ uint8_t Check_display_Running()
 		  }
 		  if (strstr(tempbuffer, StartUp)) {
 		   DEBUG_SERIAL("[DISPLAY] %s\n", StartUp);
-		   pubStatus(tempbuffer);
+		   pubStatus_addtime(tempbuffer);
 		   display_state = isStartUp;
 		   lastGet_timeStamp = 0;
 		   ret = true;
@@ -1632,7 +1659,7 @@ uint8_t Check_display_Running()
 	sprintf(tempbuffer,"[DISPLAY] NOT Response\n");
 	display_state = isNot_response;
     DEBUG_SERIAL(tempbuffer);
-	pubStatus(tempbuffer);
+	pubStatus_addtime(tempbuffer);
 	  if (millis()<10000) Comm_Error = 10; //Reset display
   }
   return Comm_Error;
@@ -1660,6 +1687,7 @@ void Reset_display()
 		delay(1000);
 		Check_display_Running();
 	}
+	Set_DisplayState(1);
 	Reset_Bus();
 }
 uint8_t Send_BusStopName()
@@ -2260,6 +2288,143 @@ void Update_Firmware_fromServer()
 			DEBUG_SERIAL(tempbuffer);
 		}
 }
+void Update_Firmware_fromEthernet()
+{
+	bool update_available=false;
+	last_check_update = millis();
+	String url = "/bus/" + String(check4update);
+	String sketch_time = getFlashTime();
+	//check update
+	data_buffer[0] = 0;
+	if (Eclient.connect(host_update, 80)) {
+	  wdt_reset();
+		DEBUG_SERIAL("connected\n");
+		DEBUG_SERIAL("GET %s%s HTTP/1.0\n",folder_update,check4update);
+		Eclient.printf("GET %s%s HTTP/1.0\n",folder_update,check4update);
+		Eclient.print("Host: ");	Eclient.println(host_update);
+		Eclient.println("User-Agent: ESP8266-http-Update");
+		Eclient.print("x-ESP8266-sketch-size: ");	Eclient.println(String(ESP.getSketchSize()));
+		Eclient.print("x-ESP8266-sketch-name: ");	Eclient.println(sketch_name);
+		Eclient.print("x-ESP8266-Flash-time: ");	Eclient.println(getFlashTime());
+		Eclient.println("Connection: close");
+		Eclient.println();
+		//
+		e_bytesRecv = 0;
+		if (handleHeaderResponse(Eclient,7000) == 200)
+		{
+			update_available = true;
+			wdt_reset();
+			// sprintf(tempbuffer,"New firmware found, updating...\n");
+			// pubStatus(tempbuffer);
+			// DEBUG_SERIAL(tempbuffer);
+		}
+		else
+		{
+			sprintf(tempbuffer,"No Update found\n");
+			pubStatus(tempbuffer);
+			DEBUG_SERIAL(tempbuffer);
+		}
+		e_bytesRecv = Eclient.available();
+		if (e_bytesRecv>0)
+		{
+			Eclient.readBytes(data_buffer,e_bytesRecv);
+			data_buffer[e_bytesRecv] = 0;
+			DEBUG_SERIAL("%s\n",data_buffer);
+		}
+	}
+	else {
+		DEBUG_SERIAL("connection failed to %s\n",host_update);
+		sprintf(tempbuffer,"connection failed to %s\n",host_update);
+		DEBUG_SERIAL(tempbuffer);
+		pubStatus(tempbuffer);
+  } 
+	Eclient.stop();
+  //get Update
+  if (update_available==false) return;
+  //
+  data_buffer[0] = 0;
+  if (Eclient.connect(host_update, 80)) { //bin/" + String(sketch_name) + ".bin";
+	  wdt_reset();
+		DEBUG_SERIAL("connected\n");
+		DEBUG_SERIAL("GET %sbin/%s.bin HTTP/1.0\n",folder_update,sketch_name);
+		Eclient.printf("GET %sbin/%s.bin HTTP/1.0\n",folder_update,sketch_name);
+		Eclient.print("Host: ");	Eclient.println(host_update);
+		Eclient.println("User-Agent: ESP8266-http-Update");
+		// Eclient.print("x-ESP8266-sketch-size: ");	Eclient.println(String(ESP.getSketchSize()));
+		// Eclient.print("x-ESP8266-sketch-name: ");	Eclient.println(sketch_name);
+		// Eclient.print("x-ESP8266-Flash-time: ");	Eclient.println(getFlashTime());
+		Eclient.println("Connection: close");
+		Eclient.println();
+		//
+		e_bytesRecv = 0;
+		if (handleHeaderResponse(Eclient,7000) == 200)
+		{
+			update_available = true;
+			wdt_reset();
+			sprintf(tempbuffer,"New firmware found, updating...\n");
+			pubStatus(tempbuffer);
+			DEBUG_SERIAL(tempbuffer);
+		}
+		else
+		{
+			e_bytesRecv = Eclient.available();
+			if (e_bytesRecv>0)
+			{
+				Eclient.readBytes(data_buffer,e_bytesRecv);
+				data_buffer[e_bytesRecv] = 0;
+				//DEBUG_SERIAL("%s\n",data_buffer);
+			}
+			sprintf(tempbuffer,"Error On Update: %s\n",data_buffer);
+			pubStatus(tempbuffer);
+			DEBUG_SERIAL(tempbuffer);
+		}
+		if (update_available && e_bytesRecv>1000)
+		{
+			if (runUpdate(Eclient,e_bytesRecv,"",U_FLASH))
+			 {
+				 DEBUG_SERIAL("Update OK Restarting...\n");
+				 ESP.restart();
+			 }
+			 else DEBUG_SERIAL("Update error\n");
+		}
+		
+	}
+	else {
+		DEBUG_SERIAL("connection failed to %s\n",host_update);
+		sprintf(tempbuffer,"connection failed to %s\n",host_update);
+		DEBUG_SERIAL(tempbuffer);
+		pubStatus(tempbuffer);
+	} 
+	Eclient.stop();
+}
+bool runUpdate(Stream& in, uint32_t size, String md5, int command)
+{
+
+
+    if(!Update.begin(size, command)) {
+        //DEBUG_SERIAL("[httpUpdate] Update.begin failed! (%s)\n", error.c_str());
+        return false;
+    }
+
+    if(md5.length()) {
+        if(!Update.setMD5(md5.c_str())) {
+            return false;
+        }
+    }
+
+    if(Update.writeStream(in) != size) {
+       
+        return false;
+    }
+
+    if(!Update.end()) {
+        
+        return false;
+    }
+
+    return true;
+}
+
 void Process_MQTT()
 {
 	if (WiFi.status() == WL_CONNECTED)
@@ -2297,6 +2462,11 @@ void Process_MQTT()
     }
   }
   yield();
+}
+void pubStatus_addtime( char* payload) {
+	String s = String(rtc.hour) + ":" + String(rtc.minute) + ":";
+	s+= String(rtc.second) + "->" + String(payload);
+	pubStatus(s);
 }
 void pubStatus( char* payload) {
 	pubStatus(String(payload));
