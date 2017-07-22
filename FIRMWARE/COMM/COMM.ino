@@ -528,7 +528,7 @@ void loop() {
 	}
 	wdt_reset();
 	httpServer.handleClient();
-	Process_MQTT();
+	
 	CheckSerial();
 #ifdef wClient
 	Wifi_Server();
@@ -706,7 +706,7 @@ if ((display_state == isRunning) && (bisNew_Config || (millis()-lastCheckConfig_
  //
  firstScan=false;
  
-// Process_MQTT();
+ Process_MQTT();
 }
 void Check_Ethernet_connection()
 {	
@@ -2262,6 +2262,13 @@ bool Compare2array(char* p1,char* p2)
 }
 void Update_Firmware_fromServer()
 {
+	if (Update_from == from_Ethernet) return Update_Firmware_fromEthernet();
+	//
+	if (WiFi.status() != WL_CONNECTED)
+	{
+		DEBUG_SERIAL("Wifi Not connected -> Check from Ethernet\n");
+		return Update_Firmware_fromEthernet();
+	}
 	last_check_update = millis();
 	String url = String(firmware_server_name) + String(check4update);
 	String sketch_time = getFlashTime();	 
@@ -2449,6 +2456,7 @@ void Process_MQTT()
 		//
 		SketchInfor2tempbuffer();
 		pubStatus(tempbuffer);
+		pubStatus(busStopName);
 
       } else {
 

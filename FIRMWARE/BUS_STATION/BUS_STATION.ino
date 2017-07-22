@@ -2636,6 +2636,11 @@ void Update_Firmware_fromServer()
 {
 	if (Update_from == from_Ethernet) return Update_Firmware_fromEthernet();
 	//
+	if (WiFi.status() != WL_CONNECTED)
+	{
+		DEBUG_SERIAL("Wifi Not connected -> Check from Ethernet\n");
+		return Update_Firmware_fromEthernet();
+	}
 	last_check_update = millis();
 	String url = String(firmware_server_name) + String(check4update);
 	String sketch_time = getFlashTime();
