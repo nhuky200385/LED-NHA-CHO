@@ -86,6 +86,7 @@ SoftwareSerial swSer(5,4, false, 256); //RX, TX
 #define Set_time_checkconfig "TcheckConfig="
 #define Show_Config "Config?"
 #define Show_Status "Status?"
+#define Set_Restart "Restart"
 #define whois "???"
 #define StartUp "StartUp"
 #define Begin_BusInfo "BusInfo"
@@ -213,6 +214,7 @@ uint32_t last_infor_OK_ts;
 bool bLostconnection;
 uint32_t last_check_update;
 uint32_t setup_wifi_timestamp,setup_eth_timestamp;
+uint32_t lastGet_Datetime;
 
 uint8_t display_state;
 enum
@@ -335,8 +337,8 @@ void Read_Config(bool bdefault)
 		EEData.Interface=from_Ethernet;
 		EEData.time_getInfor = 20; //s
 		EEData.time_checkconfig = 300; //5M
-		memcpy(&EEData.WiFi_Name[0],"3G\0",sizeof(EEData.WiFi_Name));
-		memcpy(&EEData.WiFi_Pass[0],"1234567890\0",sizeof(EEData.WiFi_Pass));
+		memcpy(&EEData.WiFi_Name[0],"BusStop\0",sizeof(EEData.WiFi_Name));
+		memcpy(&EEData.WiFi_Pass[0],"01234567890\0",sizeof(EEData.WiFi_Pass));
 		memcpy(&EEData.host[0],"bus.danang.gov.vn\0",sizeof(EEData.host));
 		memcpy(&EEData.infor_arg[0],"/bus-services-api/BusInfo?content=it%20\0",sizeof(EEData.infor_arg));
 		memcpy(&EEData.config_arg[0],"/bus-services-api/getConfigLed\0",sizeof(EEData.config_arg));
@@ -561,7 +563,7 @@ void loop() {
   }
   if ((millis()-lastGet_timeStamp)>(EEData.time_getInfor*1000) || firstScan) 
   {
-	   if (display_state == isRunning || bDateTime_OK == false)
+	   if (display_state == isRunning || bDateTime_OK == false || (millis()-lastGet_timeStamp > 3600000)) //1h
 	   {
 		   bGet_condition = true;
 		//DEBUG_SERIAL("bGet_condition=1\n");
@@ -1006,6 +1008,14 @@ void Process_Com_buffer(bool isfrommqtt)
 		else if (strstr(com_buffer,Set_display) != NULL)
 		{
 			displaySerial.println(com_buffer);			
+		}
+		else if (strstr(com_buffer,Set_Restart) != NULL)
+		{
+			sprintf(tempbuffer,"Restarting\n");
+			DEBUG_SERIAL(tempbuffer);
+			pubStatus(tempbuffer);
+			delay(500);
+			ESP.restart();
 		}
 		else
 		{
@@ -1547,6 +1557,9 @@ bool GetTime_fromHeader()
 	char* p;
 	char buf[30];
 	uint8_t yOff, mo, d, hh, mm, ss;
+	
+	if (bDateTime_OK && (millis() - lastGet_Datetime < 600000)) return bDateTime_OK;
+	
 	header_time.toCharArray(buf,sizeof(buf));
 	do{
 	p = strchr(buf,',') + 2;
@@ -1588,6 +1601,7 @@ bool GetTime_fromHeader()
 		  DEBUG_SERIAL("DateTime: %02d/%02d/%02d %02d:%02d:%02d\n",rtc.year,rtc.month,rtc.day,rtc.hour,rtc.minute,rtc.second);
 		  bok = true;
 		  bDateTime_OK = true;
+		  lastGet_Datetime = millis();
 		  break;
 	  }
 	}

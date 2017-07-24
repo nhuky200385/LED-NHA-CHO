@@ -87,6 +87,7 @@ SoftwareSerial swSer(5,4, false, 256); //RX, TX
 #define Set_time_checkconfig "TcheckConfig="
 #define Show_Config "Config?"
 #define Show_Status "Status?"
+#define Set_Restart "Restart"
 #define whois "???"
 #define StartUp "StartUp"
 #define Begin_BusInfo "BusInfo"
@@ -223,6 +224,8 @@ bool bLostconnection;
 uint32_t last_check_update;
 uint32_t last_Get_DateTime_ts;
 uint32_t setup_wifi_timestamp,setup_eth_timestamp;
+uint32_t auto_sleep_ts;
+uint32_t lastGet_Datetime;
 
 uint8_t display_state;
 enum
@@ -545,6 +548,13 @@ void loop() {
 	{
 		if (rtc.hour >= 22 || rtc.hour < 5) if (display_state == isRunning) Set_DisplayState(0);
 		if (rtc.hour ==5 && rtc.minute < 5) if (display_state == isIdle) ESP.restart();//Set_DisplayState(1);
+		//tu do tat hien thi neu ko co xe nao sap xuat ben
+		if (Bus_count == 0 && display_state == isRunning)
+		{
+			if (auto_sleep_ts==0) auto_sleep_ts = millis();
+			if (millis() - auto_sleep_ts > 300000) Set_DisplayState(0);
+		}
+		else if (Bus_count>0 && auto_sleep_ts>0) auto_sleep_ts = 0;
 	}
 	if (firstScan)
 	{
@@ -586,7 +596,7 @@ void loop() {
   }
   if ((millis()-lastGet_timeStamp)>(EEData.time_getInfor*1000) || firstScan) 
   {
-	   if (display_state == isRunning) 
+	   if (display_state == isRunning || bDateTime_OK == false || (millis()-lastGet_timeStamp > 3600000)) //1h
 	   {
 		   bGet_condition = true;
 		//DEBUG_SERIAL("bGet_condition=1\n");
@@ -1023,6 +1033,14 @@ void Process_Com_buffer(bool isfrommqtt)
 		else if (strstr(com_buffer,Set_Reset_Display) != NULL)
 		{
 			Reset_display();			
+		}
+		else if (strstr(com_buffer,Set_Restart) != NULL)
+		{
+			sprintf(tempbuffer,"Restarting\n");
+			DEBUG_SERIAL(tempbuffer);
+			pubStatus(tempbuffer);
+			delay(500);
+			ESP.restart();
 		}
 		else
 		{
@@ -1751,6 +1769,9 @@ bool GetTime_fromHeader()
 	char* p;
 	char buf[30];
 	uint8_t yOff, mo, d, hh, mm, ss;
+	
+	if (bDateTime_OK && (millis() - lastGet_Datetime < 600000)) return bDateTime_OK;
+	
 	header_time.toCharArray(buf,sizeof(buf));
 	do{
 	p = strchr(buf,',') + 2;
@@ -1792,6 +1813,7 @@ bool GetTime_fromHeader()
 		  DEBUG_SERIAL("DateTime: %02d/%02d/%02d %02d:%02d:%02d\n",rtc.year,rtc.month,rtc.day,rtc.hour,rtc.minute,rtc.second);
 		  bok = true;
 		  bDateTime_OK = true;
+		  lastGet_Datetime = millis();
 		  break;
 	  }
 	}

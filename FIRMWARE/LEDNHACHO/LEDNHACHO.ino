@@ -1586,6 +1586,7 @@ void Reset_all_Data()
 	{
 		Frame[i].changed = all_change;
 	}
+	memset(route_info_text,0,sizeof(route_info_text));
 	ClearBusInfor();
 	last_ConfigTime = 0;
 	bstartup = true;
