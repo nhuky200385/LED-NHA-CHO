@@ -138,8 +138,8 @@ String topic = "";
 String payload = "";
 
 uint32_t mqtt_timestamp;
-WiFiClient mqttclient;
-//EthernetClient mqttclient;
+// WiFiClient mqttclient;
+EthernetClient mqttclient;
 String mqttServerName = "m20.cloudmqtt.com";
 int    mqttport = 14409;
 String mqttuser =  "test";
@@ -1702,7 +1702,7 @@ void Reset_display()
 		Check_display_Running();
 	}
 	Set_DisplayState(1);
-	Reset_Bus();
+	Reset_Bus();	
 }
 uint8_t Send_BusStopName()
 {

@@ -548,8 +548,8 @@ void loop() {
 	{
 		if (rtc.hour >= 22 || rtc.hour < 5) if (display_state == isRunning) Set_DisplayState(0);
 		if (rtc.hour ==5 && rtc.minute < 5) if (display_state == isIdle) ESP.restart();//Set_DisplayState(1);
-		//tu do tat hien thi neu ko co xe nao sap xuat ben
-		if (Bus_count == 0 && display_state == isRunning)
+		//tu dong tat hien thi neu ko co xe nao sap xuat ben
+		if (Bus_count == 0 && display_state == isRunning && rtc.hour >= 20)
 		{
 			if (auto_sleep_ts==0) auto_sleep_ts = millis();
 			if (millis() - auto_sleep_ts > 300000) Set_DisplayState(0);
@@ -1914,6 +1914,7 @@ void Reset_display()
 		Check_display_Running();
 	}
 	Reset_Bus();
+	auto_sleep_ts==0;
 }
 uint8_t Send_BusStopName()
 {
