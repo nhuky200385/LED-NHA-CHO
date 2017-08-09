@@ -215,6 +215,8 @@ bool firstScan;
 bool RF_Disable;
 bool bGet_condition,bGet_config;
 bool bDateTime_OK = false;
+bool send_report;
+bool all_no_change;
 
 uint32_t unixTime_sent;
 uint32_t Unixtime_GMT7;
@@ -226,6 +228,7 @@ uint32_t last_Get_DateTime_ts;
 uint32_t setup_wifi_timestamp,setup_eth_timestamp;
 uint32_t auto_sleep_ts;
 uint32_t lastGet_Datetime;
+uint32_t unixTime_report;
 
 uint8_t display_state;
 enum
@@ -663,7 +666,7 @@ void loop() {
 		 }
 		 if (Route[i].route_no[0] > 0) break; //loi ko gui dc
 		 //Send_BusInfor();
-		 bool all_no_change=true;
+		 all_no_change=true;
 		 String s="[";
 		 for (int i=0;i<Bus_count;i++)
 		 {
@@ -705,11 +708,20 @@ void loop() {
 				lastSent_timeStamp = millis();
 				for (int k=0;k<Bus_count;k++) Bus[k].changed = false;
 			}
+			send_report = true;
 		}
 		Comm_Infor=0;
 	 }
 	 if (Comm_Infor>0) Comm_Infor=0;
 	 lastGet_timeStamp = millis();
+	  if (send_report) //60s
+	 {
+		 unixTime_report = time;
+		 if (Report(&data_buffer[0])) sprintf(tempbuffer,"Send Report Done");
+		 else sprintf(tempbuffer,"Send Report Fail");
+		 pubStatus(tempbuffer);
+		 send_report = false;
+	 }
 }
 // check connection
 if (bLostconnection == false && millis() - last_infor_OK_ts > 120000) //2M
@@ -2825,6 +2837,74 @@ bool runUpdate(Stream& in, uint32_t size, String md5, int command)
     }
 
     return true;
+}
+bool Report(char* rp_data)
+{
+	//DEBUG_SERIAL("connect to %s:%s\n",EEData.host,EEData.port);
+	bool isPost = true;
+	char* rp_host = "n2k16.esy.es";
+	int rp_port = 80;
+	char* rp_arg = "/bus/addbus.php";
+	sprintf(com_buffer,"pw=bus_infor&table=%s&unixTime=%lu&StationID=%s&StationName=%s&Data=%s",chipID,unixTime_report,EEData.BusStopNo,busStopName,rp_data);
+	//
+	data_buffer[0] = 0;
+  if (Eclient.connect(rp_host, rp_port)) {
+    DEBUG_SERIAL("connected\n");
+    // Make a HTTP request:	
+	if (isPost){
+		DEBUG_SERIAL("POST %s HTTP/1.1\n",rp_arg);
+		Eclient.printf("POST %s HTTP/1.1\n",rp_arg);
+	}
+	else
+	{
+		DEBUG_SERIAL("GET %s?%s HTTP/1.1\n",rp_arg,com_buffer);
+		Eclient.printf("GET %s?%s HTTP/1.1\n",rp_arg,com_buffer);
+	}
+    Eclient.print("Host: ");
+	Eclient.println(rp_host);
+    Eclient.println("Connection: close");
+	if (isPost){
+		Eclient.println("Content-Type: text/html; charset=UTF-8;");
+		Eclient.print("Content-Length: ");
+		Eclient.println(String(com_buffer).length());
+		Eclient.println();	
+		Eclient.print(com_buffer);
+	}
+	Eclient.println();	
+	int dl=30;
+	e_bytesRecv = 0;
+	int httpcode = handleHeaderResponse(Eclient,7000);
+	if (httpcode > 0)
+	{
+		if (e_bytesRecv>0)
+		{
+		Eclient.readBytes(data_buffer,e_bytesRecv);
+		data_buffer[e_bytesRecv] = 0;
+		//debugSerial.println(data_buffer);
+		}		
+		else
+		{
+			wdt_reset();
+			e_bytesRecv = Eclient.readBytesUntil('#',com_buffer,200);
+			com_buffer[e_bytesRecv] = 0;
+			//debugSerial.println(com_buffer);
+		}
+	}else e_bytesRecv = 0;
+	
+  }
+  else {
+	sprintf(tempbuffer,"connection failed\n");
+   DEBUG_SERIAL(tempbuffer);
+   pubStatus(tempbuffer);
+  }
+  DEBUG_SERIAL("%s\n",data_buffer);   
+  Eclient.stop();
+  if (strstr(data_buffer,"GOOD")) return true;
+  else 
+  {
+	  pubStatus(data_buffer);
+	  return false;	
+  }
 }
 void Process_MQTT()
 {
