@@ -219,6 +219,8 @@ uint32_t setup_wifi_timestamp,setup_eth_timestamp;
 uint32_t lastGet_Datetime;
 uint32_t unixTime_report;
 
+int httpcode_report;
+
 uint8_t display_state;
 enum
 {
@@ -639,7 +641,7 @@ void loop() {
 		 }
 		 //Send_BusInfor();
 		 all_no_change=true;
-		 String s="[";
+		  String s="[";
 		 for (int i=0;i<Bus_count;i++)
 		 {
 			 //int i = Bus_sort[k];
@@ -2493,6 +2495,7 @@ bool Report(char* rp_data)
 	int dl=30;
 	e_bytesRecv = 0;
 	int httpcode = handleHeaderResponse(Eclient,7000);
+	httpcode_report = httpcode;
 	if (httpcode > 0)
 	{
 		if (e_bytesRecv>0)
@@ -2550,6 +2553,7 @@ void Process_MQTT()
 		SketchInfor2tempbuffer();
 		pubStatus(tempbuffer);
 		pubStatus(busStopName);
+		//pubStatus("httpcode_report=" + String(httpcode_report));
 
       } else {
 
